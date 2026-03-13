@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,15 @@ import {
   SafeAreaView,
   Alert,
   ActivityIndicator,
+  Modal,
+  Platform,
 } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
 import { useStore } from '../store/useStore';
+
+const PAYPAL_CLIENT_ID = 'AX77yPd3nZvqVsQtTKLAUXVLk9ieO71wvjDk2m3alQcG7ft_J6EOGlacBjrcOvAVghFiYWwPee2S3sfg';
 
 const AMOUNTS = [
   { value: 0.99, label: '$0.99' },
@@ -20,31 +25,118 @@ const AMOUNTS = [
   { value: 49.99, label: '$49.99 + مكافأة $10', bonus: true },
 ];
 
+const generatePayPalHTML = (amount: number) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, sans-serif; 
+      padding: 20px;
+      direction: rtl;
+      background: #f8f9fa;
+    }
+    .amount-display {
+      text-align: center;
+      font-size: 24px;
+      font-weight: bold;
+      color: #003087;
+      margin-bottom: 20px;
+    }
+    #paypal-button-container {
+      min-height: 150px;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+  <div class="amount-display">المبلغ: $${amount.toFixed(2)}</div>
+  <div id="paypal-button-container">
+    <div class="loading">جاري تحميل PayPal...</div>
+  </div>
+  
+  <script src="https://www.paypal.com/sdk/js?client-id=${PAYPAL_CLIENT_ID}&currency=USD"></script>
+  <script>
+    paypal.Buttons({
+      style: {
+        layout: 'vertical',
+        color: 'blue',
+        shape: 'rect',
+        label: 'pay'
+      },
+      createOrder: function(data, actions) {
+        return actions.order.create({
+          purchase_units: [{
+            amount: { value: '${amount.toFixed(2)}' }
+          }]
+        });
+      },
+      onApprove: function(data, actions) {
+        return actions.order.capture().then(function(details) {
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            type: 'success',
+            amount: ${amount},
+            orderId: data.orderID
+          }));
+        });
+      },
+      onCancel: function() {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'cancel' }));
+      },
+      onError: function(err) {
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'error', message: err.toString() }));
+      }
+    }).render('#paypal-button-container');
+  </script>
+</body>
+</html>
+`;
+
 export default function TopupScreen() {
   const router = useRouter();
-  const { topupBalance, user } = useStore();
+  const { updateBalance, user, balance } = useStore();
   const [selectedAmount, setSelectedAmount] = useState(0.99);
   const [isLoading, setIsLoading] = useState(false);
+  const [showPayPal, setShowPayPal] = useState(false);
+  const webViewRef = useRef<WebView>(null);
 
-  const handleTopup = async () => {
-    setIsLoading(true);
-    
-    // Simulate payment processing
-    await new Promise((resolve) => setTimeout(resolve, 1500));
-    
-    const success = await topupBalance(selectedAmount);
-    setIsLoading(false);
-    
-    if (success) {
-      const bonus = selectedAmount >= 49.99 ? 10 : 0;
-      Alert.alert(
-        'تم الشحن بنجاح!',
-        `تم إضافة $${(selectedAmount + bonus).toFixed(2)} إلى رصيدك`,
-        [{ text: 'حسناً', onPress: () => router.back() }]
-      );
-    } else {
-      Alert.alert('خطأ', 'تعذر إتمام عملية الشحن');
+  const handlePayPalMessage = async (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      
+      if (data.type === 'success') {
+        setShowPayPal(false);
+        setIsLoading(true);
+        
+        // Add balance
+        const bonus = selectedAmount >= 49.99 ? 10 : 0;
+        await updateBalance(selectedAmount + bonus);
+        
+        setIsLoading(false);
+        Alert.alert(
+          'تم الشحن بنجاح! ✓',
+          `تم إضافة $${(selectedAmount + bonus).toFixed(2)} إلى رصيدك`,
+          [{ text: 'حسناً', onPress: () => router.back() }]
+        );
+      } else if (data.type === 'cancel') {
+        setShowPayPal(false);
+        Alert.alert('إلغاء', 'تم إلغاء عملية الدفع');
+      } else if (data.type === 'error') {
+        setShowPayPal(false);
+        Alert.alert('خطأ', 'حدث خطأ أثناء الدفع');
+      }
+    } catch (e) {
+      console.error('PayPal message error:', e);
     }
+  };
+
+  const openPayPal = () => {
+    setShowPayPal(true);
   };
 
   return (
@@ -53,7 +145,7 @@ export default function TopupScreen() {
         options={{
           headerShown: true,
           title: 'شحن الرصيد',
-          headerStyle: { backgroundColor: '#1565C0' },
+          headerStyle: { backgroundColor: '#0078D7' },
           headerTintColor: '#fff',
           headerBackTitle: 'رجوع',
         }}
@@ -61,9 +153,9 @@ export default function TopupScreen() {
 
       <View style={styles.content}>
         <View style={styles.balanceCard}>
-          <Ionicons name="wallet" size={40} color="#1565C0" />
+          <Ionicons name="wallet" size={40} color="#0078D7" />
           <Text style={styles.currentBalanceLabel}>رصيدك الحالي</Text>
-          <Text style={styles.currentBalance}>${(user?.balance || 0).toFixed(2)}</Text>
+          <Text style={styles.currentBalance}>${balance.toFixed(2)}</Text>
         </View>
 
         <Text style={styles.sectionTitle}>اختر القيمة المناسبة</Text>
@@ -93,23 +185,56 @@ export default function TopupScreen() {
 
         <TouchableOpacity
           style={styles.payButton}
-          onPress={handleTopup}
+          onPress={openPayPal}
           disabled={isLoading}
         >
           {isLoading ? (
             <ActivityIndicator color="#fff" />
           ) : (
             <>
-              <Ionicons name="card" size={22} color="#fff" />
-              <Text style={styles.payButtonText}>شحن الآن</Text>
+              <Ionicons name="logo-paypal" size={24} color="#fff" />
+              <Text style={styles.payButtonText}>الدفع عبر PayPal</Text>
             </>
           )}
         </TouchableOpacity>
 
         <Text style={styles.noteText}>
-          ملاحظة: سيتم إضافة الرصيد فوراً بعد الدفع
+          ملاحظة: سيتم إضافة الرصيد فوراً بعد إتمام الدفع
         </Text>
       </View>
+
+      {/* PayPal WebView Modal */}
+      <Modal
+        visible={showPayPal}
+        animationType="slide"
+        onRequestClose={() => setShowPayPal(false)}
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity onPress={() => setShowPayPal(false)}>
+              <Ionicons name="close" size={28} color="#333" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>الدفع عبر PayPal</Text>
+            <View style={{ width: 28 }} />
+          </View>
+          
+          <WebView
+            ref={webViewRef}
+            source={{ html: generatePayPalHTML(selectedAmount) }}
+            onMessage={handlePayPalMessage}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+            startInLoadingState={true}
+            renderLoading={() => (
+              <View style={styles.webviewLoading}>
+                <ActivityIndicator size="large" color="#003087" />
+                <Text style={styles.loadingText}>جاري تحميل PayPal...</Text>
+              </View>
+            )}
+            style={styles.webview}
+          />
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -142,7 +267,7 @@ const styles = StyleSheet.create({
   currentBalance: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: '#1565C0',
+    color: '#0078D7',
     marginTop: 5,
   },
   sectionTitle: {
@@ -160,18 +285,20 @@ const styles = StyleSheet.create({
   amountBtn: {
     width: '48%',
     backgroundColor: '#fff',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: '#ddd',
     borderRadius: 12,
     padding: 18,
     alignItems: 'center',
   },
   amountBtnSelected: {
-    borderColor: '#1565C0',
+    borderColor: '#0078D7',
     backgroundColor: '#e3f2fd',
   },
   amountBtnBonus: {
     width: '100%',
+    borderColor: '#FFC107',
+    backgroundColor: '#FFF8E1',
   },
   amountText: {
     fontSize: 16,
@@ -179,7 +306,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   amountTextSelected: {
-    color: '#1565C0',
+    color: '#0078D7',
   },
   payButton: {
     flexDirection: 'row',
@@ -201,5 +328,41 @@ const styles = StyleSheet.create({
     color: '#999',
     textAlign: 'center',
     marginTop: 15,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#fff',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#eee',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#003087',
+  },
+  webview: {
+    flex: 1,
+  },
+  webviewLoading: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f8f9fa',
+  },
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
+    fontSize: 14,
   },
 });

@@ -10,14 +10,22 @@ import {
   Modal,
   SafeAreaView,
   Animated,
+  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
 import { useStore } from '../../store/useStore';
+import Constants from 'expo-constants';
+
+// Get backend URL
+const BACKEND_URL = Constants.expoConfig?.extra?.EXPO_PUBLIC_BACKEND_URL || 
+                    process.env.EXPO_PUBLIC_BACKEND_URL || 
+                    'https://secure-calling-app.preview.emergentagent.com';
 
 export default function DialerScreen() {
   const router = useRouter();
-  const { user, balance, initiateCall, endCall, activeCall, logCall, updateBalance, loadContacts, loadCallLogs, loadMessages } = useStore();
+  const { user, balance, logCall, updateBalance, loadContacts, loadCallLogs, loadMessages } = useStore();
   const [dialNumber, setDialNumber] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isHideId, setIsHideId] = useState(false);
@@ -29,23 +37,43 @@ export default function DialerScreen() {
   const [dtmfDigits, setDtmfDigits] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
+  const [twilioReady, setTwilioReady] = useState(false);
+  const [twilioToken, setTwilioToken] = useState('');
   
   const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const webViewRef = useRef<WebView>(null);
+  const callTimerRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Fetch Twilio token on mount
   useEffect(() => {
+    const fetchToken = async () => {
+      try {
+        const identity = user?.id || 'user_' + Date.now();
+        const response = await fetch(`${BACKEND_URL}/api/token?identity=${identity}`);
+        const token = await response.text();
+        setTwilioToken(token);
+      } catch (error) {
+        console.error('Failed to fetch Twilio token:', error);
+      }
+    };
+    
+    fetchToken();
     loadContacts();
     loadCallLogs();
     loadMessages();
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    let interval: NodeJS.Timeout;
     if (showCallScreen && callStatus === 'متصل') {
-      interval = setInterval(() => {
+      callTimerRef.current = setInterval(() => {
         setCallTimer((prev) => prev + 1);
       }, 1000);
     }
-    return () => clearInterval(interval);
+    return () => {
+      if (callTimerRef.current) {
+        clearInterval(callTimerRef.current);
+      }
+    };
   }, [showCallScreen, callStatus]);
 
   const formatTime = (seconds: number) => {
@@ -79,14 +107,97 @@ export default function DialerScreen() {
     }
   };
 
+  // Handle messages from Twilio WebView
+  const handleTwilioMessage = (event: any) => {
+    try {
+      const data = JSON.parse(event.nativeEvent.data);
+      console.log('Twilio message:', data);
+      
+      switch (data.type) {
+        case 'ready':
+          setTwilioReady(true);
+          console.log('Twilio device ready');
+          break;
+        case 'connect':
+          setCallStatus('متصل');
+          break;
+        case 'disconnect':
+          handleEndCall();
+          break;
+        case 'error':
+          Alert.alert('خطأ في الاتصال', data.message || 'تعذر إجراء المكالمة');
+          setShowCallScreen(false);
+          break;
+      }
+    } catch (e) {
+      console.error('Twilio message parse error:', e);
+    }
+  };
+
+  // Generate Twilio calling HTML
+  const generateTwilioHTML = () => `
+<!DOCTYPE html>
+<html><head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <script src="https://media.twiliocdn.com/sdk/js/client/v1.18/twilio.min.js"></script>
+</head><body style="margin:0;padding:0;">
+<script>
+  let device = null;
+  let conn = null;
+  
+  function sendMsg(type, data) {
+    window.ReactNativeWebView.postMessage(JSON.stringify({type, ...data}));
+  }
+  
+  try {
+    device = new Twilio.Device('${twilioToken}', {
+      codecPreferences: ['opus', 'pcmu'],
+      fakeLocalDTMF: true,
+      edge: ['ashburn']
+    });
+    
+    device.on('ready', () => sendMsg('ready'));
+    device.on('connect', (c) => { conn = c; sendMsg('connect'); });
+    device.on('disconnect', () => sendMsg('disconnect'));
+    device.on('error', (e) => sendMsg('error', {message: e.message}));
+    
+  } catch(e) {
+    sendMsg('error', {message: e.message});
+  }
+  
+  window.addEventListener('message', function(e) {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.action === 'call' && device) {
+        conn = device.connect({
+          To: data.to,
+          callerId: '+12365066055',
+          CustomDisplayName: data.customName || ''
+        });
+      } else if (data.action === 'hangup' && device) {
+        device.disconnectAll();
+      } else if (data.action === 'dtmf' && conn) {
+        conn.sendDigits(data.digits);
+      } else if (data.action === 'mute' && conn) {
+        conn.mute(data.muted);
+      }
+    } catch(err) {}
+  });
+</script>
+</body></html>
+  `;
+
   const handleCall = async () => {
-    if (!dialNumber && !isHideId) {
+    if (!dialNumber) {
       Alert.alert('خطأ', 'يرجى إدخال رقم الهاتف');
       return;
     }
 
     if (balance < 0.05) {
-      Alert.alert('رصيد غير كافٍ', 'يرجى شحن رصيدك للمتابعة');
+      Alert.alert('رصيد غير كافٍ', 'يرجى شحن رصيدك للمتابعة', [
+        { text: 'شحن الآن', onPress: () => router.push('/topup') },
+        { text: 'إلغاء', style: 'cancel' }
+      ]);
       return;
     }
 
@@ -96,33 +207,47 @@ export default function DialerScreen() {
     setShowDTMF(false);
     setDtmfDigits('');
 
-    const displayName = isHideId ? (aliasName || 'مجهول') : dialNumber;
-    
-    // Initiate the call
-    await initiateCall(dialNumber, displayName, isRecording);
-
-    // Simulate connection after 2 seconds
+    // Send call command to WebView after a short delay
     setTimeout(() => {
-      setCallStatus('متصل');
-    }, 2000);
+      const customName = isHideId ? (aliasName || 'رقم خاص') : '';
+      webViewRef.current?.postMessage(JSON.stringify({
+        action: 'call',
+        to: dialNumber,
+        customName: customName
+      }));
+    }, 500);
   };
 
   const handleEndCall = async () => {
+    // Send hangup to WebView
+    webViewRef.current?.postMessage(JSON.stringify({ action: 'hangup' }));
+    
     // Log the call
     await logCall(dialNumber, 'outgoing', 0.05, formatTime(callTimer));
     
     // Update balance
     await updateBalance(-0.05);
     
-    endCall();
+    if (callTimerRef.current) {
+      clearInterval(callTimerRef.current);
+    }
+    
     setShowCallScreen(false);
     setCallTimer(0);
     setCallStatus('جاري الاتصال...');
     setDialNumber('');
+    setTwilioReady(false);
   };
 
   const handleDTMF = (digit: string) => {
     setDtmfDigits((prev) => prev + digit);
+    webViewRef.current?.postMessage(JSON.stringify({ action: 'dtmf', digits: digit }));
+  };
+
+  const toggleMute = () => {
+    const newMuted = !isMuted;
+    setIsMuted(newMuted);
+    webViewRef.current?.postMessage(JSON.stringify({ action: 'mute', muted: newMuted }));
   };
 
   const openAddContact = () => {
@@ -201,7 +326,7 @@ export default function DialerScreen() {
           <View style={styles.callControls}>
             <TouchableOpacity
               style={[styles.ctrlBtn, isMuted && styles.ctrlBtnActive]}
-              onPress={() => setIsMuted(!isMuted)}
+              onPress={toggleMute}
             >
               <Ionicons
                 name={isMuted ? 'mic-off' : 'mic'}
@@ -234,6 +359,20 @@ export default function DialerScreen() {
           <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall}>
             <Text style={styles.endCallBtnText}>إنهاء المكالمة</Text>
           </TouchableOpacity>
+
+          {/* Hidden WebView for Twilio */}
+          {twilioToken ? (
+            <WebView
+              ref={webViewRef}
+              source={{ html: generateTwilioHTML() }}
+              onMessage={handleTwilioMessage}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              mediaPlaybackRequiresUserAction={false}
+              allowsInlineMediaPlayback={true}
+              style={{ height: 0, width: 0, opacity: 0 }}
+            />
+          ) : null}
         </SafeAreaView>
       </View>
     </Modal>

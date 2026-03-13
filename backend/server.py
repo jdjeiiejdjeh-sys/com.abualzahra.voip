@@ -36,6 +36,7 @@ JWT_EXPIRATION_HOURS = 24 * 7  # 7 days
 TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID')
 TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN')
 TWILIO_PHONE_NUMBER = os.environ.get('TWILIO_PHONE_NUMBER')
+TWILIO_TWIML_APP_SID = os.environ.get('TWILIO_TWIML_APP_SID', 'APa891932b2a6f93e25a72f6df6d83ed2d')
 
 twilio_client = None
 if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN:
@@ -617,8 +618,8 @@ async def get_twilio_token(identity: str = None):
     # Create capability token
     capability = ClientCapabilityToken(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
     
-    # Allow outgoing calls - using a TwiML application or URL
-    capability.allow_client_outgoing(TWILIO_ACCOUNT_SID)
+    # Allow outgoing calls using the TwiML App
+    capability.allow_client_outgoing(TWILIO_TWIML_APP_SID)
     
     # Allow incoming calls to this identity
     if identity:
