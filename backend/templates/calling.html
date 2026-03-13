@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Twilio Calling</title>
+    <script src="https://media.twiliocdn.com/sdk/js/client/v1.18/twilio.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: -apple-system, system-ui, BlinkMacSystemFont; }
+        body { background: transparent; }
+        #status { color: #666; font-size: 14px; padding: 10px; text-align: center; display: none; }
+        .error { color: #d32f2f !important; }
+        .success { color: #00796b !important; }
+    </style>
+</head>
+<body>
+    <div id="status"></div>
+    
+    <script>
+        let device = null;
+        let currentConnection = null;
+        
+        function updateStatus(msg, type) {
+            const el = document.getElementById('status');
+            el.textContent = msg;
+            el.className = type || '';
+            el.style.display = 'block';
+            
+            // Send message to React Native
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'status', message: msg }));
+            }
+        }
+        
+        function sendEvent(eventType, data) {
+            if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: eventType, ...data }));
+            }
+        }
+        
+        async function initDevice(token, identity) {
+            try {
+                device = new Twilio.Device(token, {
+                    codecPreferences: ['opus', 'pcmu'],
+                    fakeLocalDTMF: true,
+                    edge: ['ashburn']
+                });
+                
+                device.on('ready', () => {
+                    updateStatus('جاهز للاتصال', 'success');
+                    sendEvent('ready');
+                });
+                
+                device.on('connect', (conn) => {
+                    currentConnection = conn;
+                    updateStatus('متصل', 'success');
+                    sendEvent('connect', { callSid: conn.parameters.CallSid });
+                });
+                
+                device.on('disconnect', () => {
+                    currentConnection = null;
+                    updateStatus('انتهت المكالمة', '');
+                    sendEvent('disconnect');
+                });
+                
+                device.on('error', (error) => {
+                    updateStatus('خطأ: ' + error.message, 'error');
+                    sendEvent('error', { message: error.message });
+                });
+                
+                device.on('incoming', (conn) => {
+                    sendEvent('incoming', { from: conn.parameters.From });
+                });
+                
+                updateStatus('جاري التهيئة...', '');
+                
+            } catch (err) {
+                updateStatus('فشل التهيئة: ' + err.message, 'error');
+                sendEvent('error', { message: err.message });
+            }
+        }
+        
+        function makeCall(toNumber, callerId, customName) {
+            if (!device) {
+                sendEvent('error', { message: 'الجهاز غير مهيأ' });
+                return;
+            }
+            
+            const params = { 
+                To: toNumber,
+                callerId: callerId || '+12365066055'
+            };
+            
+            if (customName) {
+                params.CustomDisplayName = customName;
+            }
+            
+            currentConnection = device.connect(params);
+            updateStatus('جاري الاتصال...', '');
+            sendEvent('calling', { to: toNumber });
+        }
+        
+        function endCall() {
+            if (device) {
+                device.disconnectAll();
+            }
+            if (currentConnection) {
+                currentConnection.disconnect();
+            }
+            sendEvent('disconnect');
+        }
+        
+        function sendDTMF(digits) {
+            if (currentConnection) {
+                currentConnection.sendDigits(digits);
+                sendEvent('dtmf', { digits: digits });
+            }
+        }
+        
+        function toggleMute(muted) {
+            if (currentConnection) {
+                currentConnection.mute(muted);
+                sendEvent('mute', { muted: muted });
+            }
+        }
+        
+        // Listen for messages from React Native
+        window.addEventListener('message', function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                switch(data.action) {
+                    case 'init':
+                        initDevice(data.token, data.identity);
+                        break;
+                    case 'call':
+                        makeCall(data.to, data.callerId, data.customName);
+                        break;
+                    case 'hangup':
+                        endCall();
+                        break;
+                    case 'dtmf':
+                        sendDTMF(data.digits);
+                        break;
+                    case 'mute':
+                        toggleMute(data.muted);
+                        break;
+                }
+            } catch (e) {
+                console.error('Message parse error:', e);
+            }
+        });
+        
+        // Auto-init if token provided in URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+        const identity = urlParams.get('identity');
+        if (token) {
+            initDevice(token, identity);
+        }
+    </script>
+</body>
+</html>

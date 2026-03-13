@@ -1,5 +1,7 @@
 from fastapi import FastAPI, APIRouter, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -14,6 +16,8 @@ import jwt
 import bcrypt
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
+from twilio.jwt.client import ClientCapabilityToken
+from twilio.twiml.voice_response import VoiceResponse, Dial
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -601,6 +605,87 @@ async def send_dtmf(call_sid: str, digits: str, user=Depends(get_current_user)):
     except TwilioRestException as e:
         logger.error(f"Twilio error: {str(e)}")
         raise HTTPException(status_code=400, detail=f"خطأ: {str(e)}")
+
+# ============= Twilio Token Route (for Web SDK) =============
+
+@api_router.get("/token")
+async def get_twilio_token(identity: str = None):
+    """Generate a Twilio capability token for the JavaScript SDK"""
+    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
+        raise HTTPException(status_code=500, detail="Twilio not configured")
+    
+    # Create capability token
+    capability = ClientCapabilityToken(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+    
+    # Allow outgoing calls - using a TwiML application or URL
+    capability.allow_client_outgoing(TWILIO_ACCOUNT_SID)
+    
+    # Allow incoming calls to this identity
+    if identity:
+        capability.allow_client_incoming(identity)
+    
+    token = capability.to_jwt()
+    
+    return PlainTextResponse(content=token.decode() if isinstance(token, bytes) else token)
+
+@api_router.get("/calling-page", response_class=HTMLResponse)
+async def get_calling_page():
+    """Serve the Twilio calling HTML page"""
+    template_path = ROOT_DIR / "templates" / "calling.html"
+    if template_path.exists():
+        return HTMLResponse(content=template_path.read_text())
+    raise HTTPException(status_code=404, detail="Calling page not found")
+
+@api_router.post("/twiml/voice", response_class=PlainTextResponse)
+async def twiml_voice(To: str = None, CustomDisplayName: str = None, callerId: str = None):
+    """TwiML endpoint for outgoing calls"""
+    response = VoiceResponse()
+    
+    if To:
+        dial = Dial(callerId=callerId or TWILIO_PHONE_NUMBER)
+        dial.number(To)
+        response.append(dial)
+    else:
+        response.say("مرحباً، رقم غير صالح", voice='alice', language='ar')
+    
+    return PlainTextResponse(content=str(response), media_type="application/xml")
+
+@api_router.post("/setup-user")
+async def setup_user(data: dict):
+    """Setup user from Firebase - create in MongoDB if needed"""
+    uid = data.get("uid")
+    email = data.get("email")
+    
+    if not uid or not email:
+        raise HTTPException(status_code=400, detail="Missing uid or email")
+    
+    # Check if user exists
+    existing = await db.users.find_one({"firebase_uid": uid})
+    
+    if not existing:
+        # Create new user
+        user = {
+            "id": uid,
+            "firebase_uid": uid,
+            "email": email,
+            "balance": 1.00,
+            "virtual_number": TWILIO_PHONE_NUMBER,
+            "created_at": datetime.utcnow()
+        }
+        await db.users.insert_one(user)
+        
+        # Create welcome transaction
+        trans = {
+            "id": str(uuid.uuid4()),
+            "user_id": uid,
+            "type": "bonus",
+            "amount": 1.00,
+            "description": "رصيد ترحيبي مجاني",
+            "created_at": datetime.utcnow()
+        }
+        await db.transactions.insert_one(trans)
+    
+    return {"status": "ok", "uid": uid}
 
 # ============= Health Check =============
 
