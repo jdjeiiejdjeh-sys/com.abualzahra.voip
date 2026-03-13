@@ -1,0 +1,122 @@
+{
+  "project_info": {
+    "project_number": "982107544824",
+    "firebase_url": "https://call-now-24582-default-rtdb.firebaseio.com",
+    "project_id": "call-now-24582",
+    "storage_bucket": "call-now-24582.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:982107544824:android:0196f227096019a3896f0d",
+        "android_client_info": {
+          "package_name": "com.abualzahra.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "982107544824-lthkna43m0qjjcmm59j753gc8c0iaai6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.abualzahra.app",
+            "certificate_hash": "3ba898acf53480bc392edaff91d77d6ac3a66e10"
+          }
+        },
+        {
+          "client_id": "982107544824-jbl3da73lr9h7il169onbl4ftrkmhvaj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAS4qF3pjSUlZchSGX1xKXX3QnT0xIEAXw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "982107544824-jbl3da73lr9h7il169onbl4ftrkmhvaj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:982107544824:android:d2f3a6dc7b29d7e6896f0d",
+        "android_client_info": {
+          "package_name": "com.abualzahra.voip"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "982107544824-jbl3da73lr9h7il169onbl4ftrkmhvaj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAS4qF3pjSUlZchSGX1xKXX3QnT0xIEAXw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "982107544824-jbl3da73lr9h7il169onbl4ftrkmhvaj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:982107544824:android:8fb8c8440a5e7724896f0d",
+        "android_client_info": {
+          "package_name": "com.munir.abuzahra"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "982107544824-1ol6hfhnntfe3jh0huoudpitmhojrmke.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.munir.abuzahra",
+            "certificate_hash": "7b341663d02f10f01e86f3ed25bd273f3856168a"
+          }
+        },
+        {
+          "client_id": "982107544824-tv3ac2oqnitda727nfr3goa8130ok7os.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.munir.abuzahra",
+            "certificate_hash": "3ba898acf53480bc392edaff91d77d6ac3a66e10"
+          }
+        },
+        {
+          "client_id": "982107544824-jbl3da73lr9h7il169onbl4ftrkmhvaj.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAS4qF3pjSUlZchSGX1xKXX3QnT0xIEAXw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "982107544824-jbl3da73lr9h7il169onbl4ftrkmhvaj.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

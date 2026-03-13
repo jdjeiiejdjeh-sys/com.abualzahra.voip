@@ -29,6 +29,7 @@ const GOOGLE_WEB_CLIENT_ID = '982107544824-jbl3da73lr9h7il169onbl4ftrkmhvaj.apps
 GoogleSignin.configure({
   webClientId: GOOGLE_WEB_CLIENT_ID,
   offlineAccess: true,
+  forceCodeForRefreshToken: true,
 });
 
 export default function LoginScreen() {

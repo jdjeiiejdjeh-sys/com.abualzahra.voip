@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.abualzahraa.calling",
+      "bundleIdentifier": "com.abualzahra.voip",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "للمكالمات الصوتية",
         "NSContactsUsageDescription": "للوصول إلى جهات الاتصال"
@@ -22,7 +22,7 @@
         "backgroundColor": "#0078D7"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.abualzahraa.calling",
+      "package": "com.abualzahra.voip",
       "permissions": [
         "RECORD_AUDIO",
         "INTERNET",
