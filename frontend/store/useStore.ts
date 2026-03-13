@@ -102,6 +102,7 @@ interface AppState {
   // Auth
   login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, password: string) => Promise<boolean>;
+  loginWithGoogle: (email: string, googleId: string, displayName?: string) => Promise<boolean>;
   logout: () => Promise<void>;
   initAuthListener: () => () => void;
 
@@ -205,6 +206,49 @@ export const useStore = create<AppState>((set, get) => ({
       return true;
     } catch (error) {
       console.error('Register error:', error);
+      set({ isLoading: false });
+      return false;
+    }
+  },
+
+  loginWithGoogle: async (email: string, googleId: string, displayName?: string) => {
+    try {
+      set({ isLoading: true });
+      
+      // For Google Sign-In, we create/get user in Firebase database
+      // The googleId serves as a unique identifier
+      const userId = `google_${googleId}`;
+      const userRef = ref(database, `users/${userId}`);
+      const snapshot = await get(userRef);
+      let userData = snapshot.val();
+      
+      if (!userData) {
+        // New Google user - create account with initial balance
+        userData = { 
+          balance: 0.63, 
+          email: email,
+          displayName: displayName,
+          provider: 'google',
+          createdAt: Date.now()
+        };
+        await set(userRef, userData);
+      }
+      
+      set({ 
+        user: { uid: userId, email: email, balance: userData.balance || 0.63 },
+        isAuthenticated: true,
+        balance: userData.balance || 0.63,
+        isLoading: false 
+      });
+      
+      // Load user data
+      get().loadContacts();
+      get().loadCallLogs();
+      get().loadMessages();
+      
+      return true;
+    } catch (error) {
+      console.error('Google login error:', error);
       set({ isLoading: false });
       return false;
     }

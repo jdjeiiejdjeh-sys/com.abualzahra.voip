@@ -10,20 +10,37 @@ import {
   ActivityIndicator,
   Alert,
   ScrollView,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Google from 'expo-auth-session/providers/google';
+import * as WebBrowser from 'expo-web-browser';
 import { useStore } from '../store/useStore';
+
+// Required for web browser auth session
+WebBrowser.maybeCompleteAuthSession();
+
+// Google OAuth Client IDs - From Firebase project
+const GOOGLE_WEB_CLIENT_ID = '982107544824-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com';
+const GOOGLE_ANDROID_CLIENT_ID = '982107544824-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com';
+const GOOGLE_IOS_CLIENT_ID = '982107544824-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, register, initAuthListener, isAuthenticated, isLoading } = useStore();
-  const [mode, setMode] = useState<'start' | 'welcome' | 'login' | 'register'>('start');
+  const { login, register, loginWithGoogle, initAuthListener, isAuthenticated, isLoading } = useStore();
+  const [mode, setMode] = useState<'start' | 'login'>('start');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [localLoading, setLocalLoading] = useState(false);
+
+  // Google Auth setup
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    webClientId: GOOGLE_WEB_CLIENT_ID,
+    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
+    iosClientId: GOOGLE_IOS_CLIENT_ID,
+  });
 
   useEffect(() => {
     const unsubscribe = initAuthListener();
@@ -35,6 +52,38 @@ export default function LoginScreen() {
       router.replace('/(tabs)');
     }
   }, [isAuthenticated, isLoading]);
+
+  // Handle Google Sign-In response
+  useEffect(() => {
+    if (response?.type === 'success') {
+      const { authentication } = response;
+      if (authentication?.accessToken) {
+        handleGoogleSignIn(authentication.accessToken);
+      }
+    }
+  }, [response]);
+
+  const handleGoogleSignIn = async (accessToken: string) => {
+    setLocalLoading(true);
+    try {
+      // Get user info from Google
+      const userInfoResponse = await fetch(
+        'https://www.googleapis.com/userinfo/v2/me',
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      const userInfo = await userInfoResponse.json();
+      
+      // Login with Google credentials
+      const success = await loginWithGoogle(userInfo.email, userInfo.id, userInfo.name);
+      if (!success) {
+        Alert.alert('خطأ', 'تعذر تسجيل الدخول عبر Google');
+      }
+    } catch (error) {
+      console.error('Google sign-in error:', error);
+      Alert.alert('خطأ', 'تعذر تسجيل الدخول عبر Google');
+    }
+    setLocalLoading(false);
+  };
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -51,31 +100,14 @@ export default function LoginScreen() {
     }
   };
 
-  const handleRegister = async () => {
-    if (!email || !password) {
-      Alert.alert('خطأ', 'يرجى إدخال جميع البيانات');
-      return;
-    }
-
-    if (password !== confirmPassword) {
-      Alert.alert('خطأ', 'كلمات المرور غير متطابقة');
-      return;
-    }
-
-    if (password.length < 6) {
-      Alert.alert('خطأ', 'كلمة المرور يجب أن تكون 6 أحرف على الأقل');
-      return;
-    }
-
+  const handleGooglePress = async () => {
     setLocalLoading(true);
-    const success = await register(email, password);
-    setLocalLoading(false);
-    
-    if (success) {
-      Alert.alert('مبروك!', 'تم إنشاء حسابك ومنحك رصيد $0.63 مجاناً!');
-    } else {
-      Alert.alert('خطأ', 'تعذر إنشاء الحساب. ربما البريد مسجل مسبقاً');
+    try {
+      await promptAsync();
+    } catch (error) {
+      console.error('Google prompt error:', error);
     }
+    setLocalLoading(false);
   };
 
   if (isLoading) {
@@ -87,137 +119,106 @@ export default function LoginScreen() {
     );
   }
 
+  // شاشة البداية - الترحيب
   const renderStart = () => (
     <View style={styles.startContainer}>
       <View style={styles.logoCircle}>
-        <Ionicons name="call" size={50} color="#fff" />
+        <Ionicons name="call" size={60} color="#fff" />
       </View>
       <Text style={styles.title}>أبو الزهراء</Text>
-      <TouchableOpacity style={styles.startBtn} onPress={() => setMode('welcome')}>
-        <Text style={styles.startBtnText}>دخول / تسجيل</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderWelcome = () => (
-    <View style={styles.welcomeContainer}>
-      <View style={styles.welcomeIcon}>
-        <Ionicons name="person-circle" size={80} color="#fff" />
-      </View>
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => setMode('login')}>
-        <Text style={styles.primaryBtnText}>تسجيل الدخول</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.secondaryBtn} onPress={() => setMode('register')}>
-        <Text style={styles.secondaryBtnText}>حساب جديد</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderLoginForm = () => (
-    <View style={styles.formCard}>
-      <Text style={styles.formTitle}>مرحباً بعودتك</Text>
+      <Text style={styles.subtitle}>تطبيق الاتصال الآمن</Text>
       
-      <TextInput
-        style={styles.input}
-        placeholder="البريد الإلكتروني"
-        placeholderTextColor="#999"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        textAlign="right"
-      />
-      
-      <View style={styles.passwordContainer}>
+      <View style={styles.startBtnGroup}>
         <TouchableOpacity 
-          style={styles.eyeIcon} 
-          onPress={() => setShowPassword(!showPassword)}
+          style={styles.startBtnWhite} 
+          onPress={() => setMode('login')}
         >
-          <Ionicons 
-            name={showPassword ? 'eye-off' : 'eye'} 
-            size={22} 
-            color="#666" 
-          />
+          <Text style={styles.startBtnWhiteText}>دخول / تسجيل</Text>
         </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  // شاشة تسجيل الدخول
+  const renderLogin = () => (
+    <View style={styles.loginContainer}>
+      <TouchableOpacity 
+        style={styles.backArrow} 
+        onPress={() => setMode('start')}
+      >
+        <Ionicons name="arrow-forward" size={28} color="#fff" />
+      </TouchableOpacity>
+
+      <View style={styles.loginHeader}>
+        <View style={styles.loginIcon}>
+          <Ionicons name="person-circle" size={80} color="rgba(255,255,255,0.9)" />
+        </View>
+        <Text style={styles.loginTitle}>مرحباً بك</Text>
+      </View>
+
+      <View style={styles.formCard}>
         <TextInput
-          style={styles.passwordInput}
-          placeholder="كلمة المرور"
+          style={styles.input}
+          placeholder="البريد الإلكتروني"
           placeholderTextColor="#999"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry={!showPassword}
+          value={email}
+          onChangeText={setEmail}
+          keyboardType="email-address"
+          autoCapitalize="none"
           textAlign="right"
         />
+        
+        <View style={styles.passwordContainer}>
+          <TouchableOpacity 
+            style={styles.eyeIcon} 
+            onPress={() => setShowPassword(!showPassword)}
+          >
+            <Ionicons 
+              name={showPassword ? 'eye-off' : 'eye'} 
+              size={22} 
+              color="#666" 
+            />
+          </TouchableOpacity>
+          <TextInput
+            style={styles.passwordInput}
+            placeholder="كلمة المرور"
+            placeholderTextColor="#999"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry={!showPassword}
+            textAlign="right"
+          />
+        </View>
+
+        <TouchableOpacity 
+          style={styles.loginBtn} 
+          onPress={handleLogin}
+          disabled={localLoading}
+        >
+          {localLoading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.loginBtnText}>تسجيل الدخول</Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={styles.dividerContainer}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>أو</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        <TouchableOpacity 
+          style={styles.googleBtn} 
+          onPress={handleGooglePress}
+          disabled={localLoading || !request}
+        >
+          <View style={styles.googleIconContainer}>
+            <Text style={styles.googleIcon}>G</Text>
+          </View>
+          <Text style={styles.googleBtnText}>تسجيل عبر Google</Text>
+        </TouchableOpacity>
       </View>
-
-      <TouchableOpacity 
-        style={styles.submitBtn} 
-        onPress={handleLogin}
-        disabled={localLoading}
-      >
-        {localLoading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.submitBtnText}>دخول</Text>
-        )}
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.backBtn} onPress={() => setMode('welcome')}>
-        <Text style={styles.backBtnText}>الرجوع</Text>
-      </TouchableOpacity>
-    </View>
-  );
-
-  const renderRegisterForm = () => (
-    <View style={styles.formCard}>
-      <Text style={styles.formTitle}>حساب جديد</Text>
-      
-      <TextInput
-        style={styles.input}
-        placeholder="البريد الإلكتروني"
-        placeholderTextColor="#999"
-        value={email}
-        onChangeText={setEmail}
-        keyboardType="email-address"
-        autoCapitalize="none"
-        textAlign="right"
-      />
-      
-      <TextInput
-        style={styles.input}
-        placeholder="كلمة المرور"
-        placeholderTextColor="#999"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry={!showPassword}
-        textAlign="right"
-      />
-
-      <TextInput
-        style={styles.input}
-        placeholder="تأكيد كلمة المرور"
-        placeholderTextColor="#999"
-        value={confirmPassword}
-        onChangeText={setConfirmPassword}
-        secureTextEntry={!showPassword}
-        textAlign="right"
-      />
-
-      <TouchableOpacity 
-        style={styles.submitBtn} 
-        onPress={handleRegister}
-        disabled={localLoading}
-      >
-        {localLoading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.submitBtnText}>إنشاء الحساب</Text>
-        )}
-      </TouchableOpacity>
-
-      <TouchableOpacity style={styles.backBtn} onPress={() => setMode('welcome')}>
-        <Text style={styles.backBtnText}>الرجوع</Text>
-      </TouchableOpacity>
     </View>
   );
 
@@ -231,9 +232,7 @@ export default function LoginScreen() {
         keyboardShouldPersistTaps="handled"
       >
         {mode === 'start' && renderStart()}
-        {mode === 'welcome' && renderWelcome()}
-        {mode === 'login' && renderLoginForm()}
-        {mode === 'register' && renderRegisterForm()}
+        {mode === 'login' && renderLogin()}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -259,90 +258,101 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
+  
+  // شاشة البداية
   startContainer: {
     alignItems: 'center',
+    width: '100%',
   },
   logoCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.3)',
   },
   title: {
-    fontSize: 36,
+    fontSize: 42,
     fontWeight: '700',
     color: '#fff',
-    marginBottom: 50,
+    marginBottom: 8,
     letterSpacing: 1,
+    textShadowColor: 'rgba(0,0,0,0.2)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 5,
   },
-  startBtn: {
+  subtitle: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.85)',
+    marginBottom: 60,
+  },
+  startBtnGroup: {
+    width: '100%',
+    maxWidth: 280,
+  },
+  startBtnWhite: {
     backgroundColor: '#fff',
-    paddingHorizontal: 50,
     paddingVertical: 18,
     borderRadius: 30,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 5,
   },
-  startBtnText: {
+  startBtnWhiteText: {
     color: '#0078D7',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  welcomeContainer: {
-    alignItems: 'center',
+
+  // شاشة تسجيل الدخول
+  loginContainer: {
     width: '100%',
-    maxWidth: 300,
-  },
-  welcomeIcon: {
-    marginBottom: 40,
-  },
-  primaryBtn: {
-    backgroundColor: '#fff',
-    borderRadius: 30,
-    padding: 18,
     alignItems: 'center',
-    width: '100%',
+  },
+  backArrow: {
+    position: 'absolute',
+    top: -40,
+    right: 0,
+    padding: 10,
+    zIndex: 10,
+  },
+  loginHeader: {
+    alignItems: 'center',
+    marginBottom: 30,
+  },
+  loginIcon: {
     marginBottom: 15,
   },
-  primaryBtnText: {
-    color: '#0078D7',
-    fontSize: 18,
+  loginTitle: {
+    fontSize: 28,
     fontWeight: 'bold',
-  },
-  secondaryBtn: {
-    borderWidth: 1,
-    borderColor: '#fff',
-    borderRadius: 30,
-    padding: 18,
-    alignItems: 'center',
-    width: '100%',
-  },
-  secondaryBtnText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   formCard: {
     backgroundColor: '#fff',
     width: '100%',
     maxWidth: 350,
-    padding: 30,
+    padding: 25,
     borderRadius: 20,
-  },
-  formTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: '#0078D7',
-    textAlign: 'center',
-    marginBottom: 25,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
   },
   input: {
-    backgroundColor: '#fafafa',
+    backgroundColor: '#f5f5f5',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    padding: 14,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
     marginBottom: 15,
     color: '#333',
@@ -350,39 +360,76 @@ const styles = StyleSheet.create({
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fafafa',
+    backgroundColor: '#f5f5f5',
     borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 8,
-    marginBottom: 15,
+    borderColor: '#e0e0e0',
+    borderRadius: 12,
+    marginBottom: 20,
   },
   passwordInput: {
     flex: 1,
-    padding: 14,
+    padding: 16,
     fontSize: 16,
     color: '#333',
   },
   eyeIcon: {
-    padding: 14,
+    padding: 16,
   },
-  submitBtn: {
+  loginBtn: {
     backgroundColor: '#0078D7',
-    borderRadius: 8,
+    borderRadius: 12,
     padding: 16,
     alignItems: 'center',
-    marginTop: 10,
   },
-  submitBtnText: {
+  loginBtnText: {
     color: '#fff',
     fontSize: 17,
     fontWeight: 'bold',
   },
-  backBtn: {
-    marginTop: 20,
+  dividerContainer: {
+    flexDirection: 'row',
     alignItems: 'center',
+    marginVertical: 20,
   },
-  backBtnText: {
-    color: '#888',
-    fontSize: 15,
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#e0e0e0',
+  },
+  dividerText: {
+    paddingHorizontal: 15,
+    color: '#999',
+    fontSize: 14,
+  },
+  googleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 12,
+    padding: 14,
+    gap: 12,
+  },
+  googleIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ddd',
+  },
+  googleIcon: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#4285F4',
+  },
+  googleBtnText: {
+    color: '#333',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
