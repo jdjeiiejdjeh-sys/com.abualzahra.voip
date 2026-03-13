@@ -17,23 +17,24 @@ import { useStore } from '../store/useStore';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login, signup, loadToken, isLoading } = useStore();
-  const [mode, setMode] = useState<'options' | 'login' | 'signup'>('options');
+  const { login, register, initAuthListener, isAuthenticated, isLoading } = useStore();
+  const [mode, setMode] = useState<'start' | 'welcome' | 'login' | 'register'>('start');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [localLoading, setLocalLoading] = useState(false);
 
   useEffect(() => {
-    checkAuth();
+    const unsubscribe = initAuthListener();
+    return () => unsubscribe();
   }, []);
 
-  const checkAuth = async () => {
-    const isAuthenticated = await loadToken();
-    if (isAuthenticated) {
+  useEffect(() => {
+    if (isAuthenticated && !isLoading) {
       router.replace('/(tabs)');
     }
-  };
+  }, [isAuthenticated, isLoading]);
 
   const handleLogin = async () => {
     if (!email || !password) {
@@ -41,15 +42,16 @@ export default function LoginScreen() {
       return;
     }
 
+    setLocalLoading(true);
     const success = await login(email, password);
-    if (success) {
-      router.replace('/(tabs)');
-    } else {
+    setLocalLoading(false);
+    
+    if (!success) {
       Alert.alert('خطأ', 'بيانات الدخول غير صحيحة');
     }
   };
 
-  const handleSignup = async () => {
+  const handleRegister = async () => {
     if (!email || !password) {
       Alert.alert('خطأ', 'يرجى إدخال جميع البيانات');
       return;
@@ -65,29 +67,56 @@ export default function LoginScreen() {
       return;
     }
 
-    const success = await signup(email, password);
+    setLocalLoading(true);
+    const success = await register(email, password);
+    setLocalLoading(false);
+    
     if (success) {
-      Alert.alert('مبروك!', 'تم إنشاء حسابك ومنحك رصيد 1$ مجاناً!', [
-        { text: 'حسناً', onPress: () => router.replace('/(tabs)') }
-      ]);
+      Alert.alert('مبروك!', 'تم إنشاء حسابك ومنحك رصيد $0.63 مجاناً!');
     } else {
-      Alert.alert('خطأ', 'البريد الإلكتروني مسجل مسبقاً');
+      Alert.alert('خطأ', 'تعذر إنشاء الحساب. ربما البريد مسجل مسبقاً');
     }
   };
 
-  const renderOptions = () => (
-    <View style={styles.optionsContainer}>
-      <TouchableOpacity style={styles.primaryBtn} onPress={() => setMode('login')}>
-        <Text style={styles.primaryBtnText}>تسجيل الدخول</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={styles.secondaryBtn} onPress={() => setMode('signup')}>
-        <Text style={styles.secondaryBtnText}>إنشاء حساب جديد</Text>
+  if (isLoading) {
+    return (
+      <View style={[styles.container, styles.centered]}>
+        <ActivityIndicator size="large" color="#fff" />
+        <Text style={styles.loadingText}>جاري التحميل...</Text>
+      </View>
+    );
+  }
+
+  const renderStart = () => (
+    <View style={styles.startContainer}>
+      <View style={styles.logoCircle}>
+        <Ionicons name="call" size={50} color="#fff" />
+      </View>
+      <Text style={styles.title}>أبو الزهراء</Text>
+      <TouchableOpacity style={styles.startBtn} onPress={() => setMode('welcome')}>
+        <Text style={styles.startBtnText}>دخول / تسجيل</Text>
       </TouchableOpacity>
     </View>
   );
 
-  const renderForm = () => (
-    <View style={styles.formContainer}>
+  const renderWelcome = () => (
+    <View style={styles.welcomeContainer}>
+      <View style={styles.welcomeIcon}>
+        <Ionicons name="person-circle" size={80} color="#fff" />
+      </View>
+      <TouchableOpacity style={styles.primaryBtn} onPress={() => setMode('login')}>
+        <Text style={styles.primaryBtnText}>تسجيل الدخول</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={styles.secondaryBtn} onPress={() => setMode('register')}>
+        <Text style={styles.secondaryBtnText}>حساب جديد</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderLoginForm = () => (
+    <View style={styles.formCard}>
+      <Text style={styles.formTitle}>مرحباً بعودتك</Text>
+      
       <TextInput
         style={styles.input}
         placeholder="البريد الإلكتروني"
@@ -121,34 +150,73 @@ export default function LoginScreen() {
         />
       </View>
 
-      {mode === 'signup' && (
-        <TextInput
-          style={styles.input}
-          placeholder="تأكيد كلمة المرور"
-          placeholderTextColor="#999"
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry={!showPassword}
-          textAlign="right"
-        />
-      )}
-
       <TouchableOpacity 
-        style={styles.primaryBtn} 
-        onPress={mode === 'login' ? handleLogin : handleSignup}
-        disabled={isLoading}
+        style={styles.submitBtn} 
+        onPress={handleLogin}
+        disabled={localLoading}
       >
-        {isLoading ? (
-          <ActivityIndicator color="#1565C0" />
+        {localLoading ? (
+          <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.primaryBtnText}>
-            {mode === 'login' ? 'دخول' : 'تسجيل'}
-          </Text>
+          <Text style={styles.submitBtnText}>دخول</Text>
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.secondaryBtn} onPress={() => setMode('options')}>
-        <Text style={styles.secondaryBtnText}>عودة</Text>
+      <TouchableOpacity style={styles.backBtn} onPress={() => setMode('welcome')}>
+        <Text style={styles.backBtnText}>الرجوع</Text>
+      </TouchableOpacity>
+    </View>
+  );
+
+  const renderRegisterForm = () => (
+    <View style={styles.formCard}>
+      <Text style={styles.formTitle}>حساب جديد</Text>
+      
+      <TextInput
+        style={styles.input}
+        placeholder="البريد الإلكتروني"
+        placeholderTextColor="#999"
+        value={email}
+        onChangeText={setEmail}
+        keyboardType="email-address"
+        autoCapitalize="none"
+        textAlign="right"
+      />
+      
+      <TextInput
+        style={styles.input}
+        placeholder="كلمة المرور"
+        placeholderTextColor="#999"
+        value={password}
+        onChangeText={setPassword}
+        secureTextEntry={!showPassword}
+        textAlign="right"
+      />
+
+      <TextInput
+        style={styles.input}
+        placeholder="تأكيد كلمة المرور"
+        placeholderTextColor="#999"
+        value={confirmPassword}
+        onChangeText={setConfirmPassword}
+        secureTextEntry={!showPassword}
+        textAlign="right"
+      />
+
+      <TouchableOpacity 
+        style={styles.submitBtn} 
+        onPress={handleRegister}
+        disabled={localLoading}
+      >
+        {localLoading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.submitBtnText}>إنشاء الحساب</Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity style={styles.backBtn} onPress={() => setMode('welcome')}>
+        <Text style={styles.backBtnText}>الرجوع</Text>
       </TouchableOpacity>
     </View>
   );
@@ -162,15 +230,10 @@ export default function LoginScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={styles.logoContainer}>
-          <View style={styles.logoCircle}>
-            <Ionicons name="call" size={40} color="#fff" />
-          </View>
-          <Text style={styles.title}>أبو الزهراء</Text>
-          <Text style={styles.subtitle}>تطبيق الاتصال الآمن والمجاني</Text>
-        </View>
-
-        {mode === 'options' ? renderOptions() : renderForm()}
+        {mode === 'start' && renderStart()}
+        {mode === 'welcome' && renderWelcome()}
+        {mode === 'login' && renderLoginForm()}
+        {mode === 'register' && renderRegisterForm()}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -179,7 +242,16 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1565C0',
+    backgroundColor: '#0078D7',
+  },
+  centered: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    color: '#fff',
+    marginTop: 15,
+    fontSize: 16,
   },
   scrollContent: {
     flexGrow: 1,
@@ -187,41 +259,90 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 20,
   },
-  logoContainer: {
+  startContainer: {
     alignItems: 'center',
-    marginBottom: 40,
   },
   logoCircle: {
-    width: 90,
-    height: 90,
-    borderRadius: 45,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     backgroundColor: 'rgba(255,255,255,0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
   },
   title: {
-    fontSize: 32,
-    fontWeight: 'bold',
+    fontSize: 36,
+    fontWeight: '700',
     color: '#fff',
-    marginBottom: 8,
+    marginBottom: 50,
+    letterSpacing: 1,
   },
-  subtitle: {
+  startBtn: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 50,
+    paddingVertical: 18,
+    borderRadius: 30,
+  },
+  startBtnText: {
+    color: '#0078D7',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  welcomeContainer: {
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 300,
+  },
+  welcomeIcon: {
+    marginBottom: 40,
+  },
+  primaryBtn: {
+    backgroundColor: '#fff',
+    borderRadius: 30,
+    padding: 18,
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 15,
+  },
+  primaryBtnText: {
+    color: '#0078D7',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  secondaryBtn: {
+    borderWidth: 1,
+    borderColor: '#fff',
+    borderRadius: 30,
+    padding: 18,
+    alignItems: 'center',
+    width: '100%',
+  },
+  secondaryBtnText: {
+    color: '#fff',
     fontSize: 16,
-    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '600',
   },
-  optionsContainer: {
+  formCard: {
+    backgroundColor: '#fff',
     width: '100%',
-    maxWidth: 300,
+    maxWidth: 350,
+    padding: 30,
+    borderRadius: 20,
   },
-  formContainer: {
-    width: '100%',
-    maxWidth: 300,
+  formTitle: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    color: '#0078D7',
+    textAlign: 'center',
+    marginBottom: 25,
   },
   input: {
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 10,
-    padding: 15,
+    backgroundColor: '#fafafa',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
+    padding: 14,
     fontSize: 16,
     marginBottom: 15,
     color: '#333',
@@ -229,47 +350,39 @@ const styles = StyleSheet.create({
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    borderRadius: 10,
+    backgroundColor: '#fafafa',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 8,
     marginBottom: 15,
   },
   passwordInput: {
     flex: 1,
-    padding: 15,
+    padding: 14,
     fontSize: 16,
     color: '#333',
   },
   eyeIcon: {
-    padding: 15,
+    padding: 14,
   },
-  primaryBtn: {
-    backgroundColor: '#fff',
-    borderRadius: 25,
-    padding: 15,
+  submitBtn: {
+    backgroundColor: '#0078D7',
+    borderRadius: 8,
+    padding: 16,
     alignItems: 'center',
-    marginBottom: 10,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 3,
+    marginTop: 10,
   },
-  primaryBtnText: {
-    color: '#1565C0',
-    fontSize: 18,
+  submitBtnText: {
+    color: '#fff',
+    fontSize: 17,
     fontWeight: 'bold',
   },
-  secondaryBtn: {
-    borderWidth: 2,
-    borderColor: 'rgba(255,255,255,0.7)',
-    borderRadius: 25,
-    padding: 15,
+  backBtn: {
+    marginTop: 20,
     alignItems: 'center',
-    marginTop: 5,
   },
-  secondaryBtnText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+  backBtnText: {
+    color: '#888',
+    fontSize: 15,
   },
 });

@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
-  ActivityIndicator,
+  ScrollView,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -15,37 +15,47 @@ import { useStore } from '../store/useStore';
 export default function RatesScreen() {
   const { checkRate } = useStore();
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [result, setResult] = useState<{ country: string; rate_per_minute: number } | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [result, setResult] = useState<{ country: string; rate: number } | null>(null);
 
-  const handleCheck = async () => {
+  const handleCheck = () => {
     if (!phoneNumber) return;
-    
-    setIsLoading(true);
-    const rate = await checkRate(phoneNumber);
+    const rate = checkRate(phoneNumber);
     setResult(rate);
-    setIsLoading(false);
   };
+
+  const commonRates = [
+    { country: 'اليمن', code: '967', rate: '0.15' },
+    { country: 'السعودية', code: '966', rate: '0.08' },
+    { country: 'الإمارات', code: '971', rate: '0.10' },
+    { country: 'مصر', code: '20', rate: '0.07' },
+    { country: 'الأردن', code: '962', rate: '0.09' },
+    { country: 'لبنان', code: '961', rate: '0.12' },
+    { country: 'فلسطين', code: '970', rate: '0.11' },
+    { country: 'العراق', code: '964', rate: '0.14' },
+    { country: 'سوريا', code: '963', rate: '0.16' },
+    { country: 'أمريكا/كندا', code: '1', rate: '0.05' },
+    { country: 'المملكة المتحدة', code: '44', rate: '0.06' },
+  ];
 
   return (
     <SafeAreaView style={styles.container}>
       <Stack.Screen
         options={{
           headerShown: true,
-          title: 'التعرفة',
-          headerStyle: { backgroundColor: '#1565C0' },
+          title: 'استعلام التعرفة',
+          headerStyle: { backgroundColor: '#0078D7' },
           headerTintColor: '#fff',
           headerBackTitle: 'رجوع',
         }}
       />
 
-      <View style={styles.content}>
+      <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>استعلام عن تعرفة رقم</Text>
+          <Text style={styles.cardTitle}>استعلام عن سعر رقم</Text>
           
           <TextInput
             style={styles.input}
-            placeholder="أدخل الرقم (مثال: 967...)"
+            placeholder="مثال: +967 777..."
             placeholderTextColor="#999"
             value={phoneNumber}
             onChangeText={setPhoneNumber}
@@ -56,25 +66,19 @@ export default function RatesScreen() {
           <TouchableOpacity
             style={styles.checkBtn}
             onPress={handleCheck}
-            disabled={isLoading || !phoneNumber}
           >
-            {isLoading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.checkBtnText}>استعلام</Text>
-            )}
+            <Ionicons name="search" size={20} color="#fff" />
+            <Text style={styles.checkBtnText}>استعلام السعر</Text>
           </TouchableOpacity>
 
           {result && (
             <View style={styles.resultContainer}>
-              <View style={styles.resultRow}>
-                <Text style={styles.resultLabel}>الدولة:</Text>
-                <Text style={styles.resultValue}>{result.country}</Text>
+              <View style={styles.resultIcon}>
+                <Ionicons name="checkmark-circle" size={40} color="#4CAF50" />
               </View>
-              <View style={styles.resultRow}>
-                <Text style={styles.resultLabel}>سعر الدقيقة:</Text>
-                <Text style={styles.rateValue}>${result.rate_per_minute.toFixed(2)}</Text>
-              </View>
+              <Text style={styles.resultCountry}>{result.country}</Text>
+              <Text style={styles.resultRate}>${result.rate.toFixed(2)}</Text>
+              <Text style={styles.resultLabel}>للدقيقة الواحدة</Text>
             </View>
           )}
         </View>
@@ -82,20 +86,17 @@ export default function RatesScreen() {
         <View style={styles.ratesCard}>
           <Text style={styles.ratesTitle}>أسعار الدول الرئيسية</Text>
           
-          {[
-            { country: 'اليمن', rate: '0.15' },
-            { country: 'السعودية', rate: '0.08' },
-            { country: 'الإمارات', rate: '0.10' },
-            { country: 'مصر', rate: '0.07' },
-            { country: 'أمريكا/كندا', rate: '0.05' },
-          ].map((item) => (
-            <View key={item.country} style={styles.rateRow}>
-              <Text style={styles.countryName}>{item.country}</Text>
+          {commonRates.map((item) => (
+            <View key={item.code} style={styles.rateRow}>
+              <View style={styles.rateInfo}>
+                <Text style={styles.countryName}>{item.country}</Text>
+                <Text style={styles.countryCode}>+{item.code}</Text>
+              </View>
               <Text style={styles.countryRate}>${item.rate}/دقيقة</Text>
             </View>
           ))}
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -103,7 +104,7 @@ export default function RatesScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f0f2f5',
   },
   content: {
     padding: 15,
@@ -113,11 +114,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     padding: 20,
     marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
   },
   cardTitle: {
     fontSize: 16,
@@ -135,10 +131,13 @@ const styles = StyleSheet.create({
     marginBottom: 15,
   },
   checkBtn: {
-    backgroundColor: '#1565C0',
+    flexDirection: 'row',
+    backgroundColor: '#9C27B0',
     borderRadius: 8,
     padding: 15,
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
   },
   checkBtnText: {
     color: '#fff',
@@ -147,39 +146,34 @@ const styles = StyleSheet.create({
   },
   resultContainer: {
     marginTop: 20,
-    padding: 15,
-    backgroundColor: '#e3f2fd',
-    borderRadius: 8,
-  },
-  resultRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    padding: 20,
+    backgroundColor: '#E3F2FD',
+    borderRadius: 12,
     alignItems: 'center',
+  },
+  resultIcon: {
     marginBottom: 10,
+  },
+  resultCountry: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 5,
+  },
+  resultRate: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: '#0078D7',
   },
   resultLabel: {
     fontSize: 14,
     color: '#666',
-  },
-  resultValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#333',
-  },
-  rateValue: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#4CAF50',
+    marginTop: 5,
   },
   ratesCard: {
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
   },
   ratesTitle: {
     fontSize: 16,
@@ -196,13 +190,22 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#f0f0f0',
   },
+  rateInfo: {
+    flex: 1,
+  },
   countryName: {
     fontSize: 15,
     color: '#333',
+    fontWeight: '500',
+  },
+  countryCode: {
+    fontSize: 12,
+    color: '#888',
+    marginTop: 2,
   },
   countryRate: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1565C0',
+    color: '#9C27B0',
   },
 });

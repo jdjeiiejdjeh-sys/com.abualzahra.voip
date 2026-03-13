@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
   Modal,
   SafeAreaView,
+  Animated,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -16,10 +17,10 @@ import { useStore } from '../../store/useStore';
 
 export default function DialerScreen() {
   const router = useRouter();
-  const { user, initiateCall, refreshUser, activeCall } = useStore();
+  const { user, balance, initiateCall, endCall, activeCall, logCall, updateBalance, loadContacts, loadCallLogs, loadMessages } = useStore();
   const [dialNumber, setDialNumber] = useState('');
   const [isRecording, setIsRecording] = useState(false);
-  const [isAnonymous, setIsAnonymous] = useState(false);
+  const [isHideId, setIsHideId] = useState(false);
   const [aliasName, setAliasName] = useState('');
   const [showCallScreen, setShowCallScreen] = useState(false);
   const [callTimer, setCallTimer] = useState(0);
@@ -28,9 +29,13 @@ export default function DialerScreen() {
   const [dtmfDigits, setDtmfDigits] = useState('');
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
+  
+  const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    refreshUser();
+    loadContacts();
+    loadCallLogs();
+    loadMessages();
   }, []);
 
   useEffect(() => {
@@ -59,19 +64,28 @@ export default function DialerScreen() {
     setDialNumber((prev) => prev.slice(0, -1));
   };
 
-  const handleLongPressZero = () => {
-    if (dialNumber.length < 15) {
-      setDialNumber((prev) => prev + '+');
+  const startPressZero = () => {
+    pressTimerRef.current = setTimeout(() => {
+      dialDigit('+');
+      pressTimerRef.current = null;
+    }, 800);
+  };
+
+  const endPressZero = () => {
+    if (pressTimerRef.current) {
+      dialDigit('0');
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
     }
   };
 
   const handleCall = async () => {
-    if (!dialNumber && !isAnonymous) {
+    if (!dialNumber && !isHideId) {
       Alert.alert('خطأ', 'يرجى إدخال رقم الهاتف');
       return;
     }
 
-    if ((user?.balance || 0) < 0.05) {
+    if (balance < 0.05) {
       Alert.alert('رصيد غير كافٍ', 'يرجى شحن رصيدك للمتابعة');
       return;
     }
@@ -79,64 +93,59 @@ export default function DialerScreen() {
     setShowCallScreen(true);
     setCallTimer(0);
     setCallStatus('جاري الاتصال...');
+    setShowDTMF(false);
+    setDtmfDigits('');
 
-    const callSid = await initiateCall(dialNumber, isRecording, isAnonymous, aliasName);
+    const displayName = isHideId ? (aliasName || 'مجهول') : dialNumber;
     
-    if (callSid) {
-      setTimeout(() => {
-        setCallStatus('متصل');
-      }, 2000);
-    } else {
-      Alert.alert('خطأ', 'تعذر إجراء المكالمة');
-      setShowCallScreen(false);
-    }
+    // Initiate the call
+    await initiateCall(dialNumber, displayName, isRecording);
+
+    // Simulate connection after 2 seconds
+    setTimeout(() => {
+      setCallStatus('متصل');
+    }, 2000);
   };
 
   const handleEndCall = async () => {
-    if (activeCall?.callSid) {
-      const { endCall } = useStore.getState();
-      await endCall(activeCall.callSid);
-    }
+    // Log the call
+    await logCall(dialNumber, 'outgoing', 0.05, formatTime(callTimer));
+    
+    // Update balance
+    await updateBalance(-0.05);
+    
+    endCall();
     setShowCallScreen(false);
     setCallTimer(0);
     setCallStatus('جاري الاتصال...');
     setDialNumber('');
-    refreshUser();
   };
 
   const handleDTMF = (digit: string) => {
     setDtmfDigits((prev) => prev + digit);
-    // In production, send DTMF to Twilio
   };
 
-  const renderKeypad = (onPress: (digit: string) => void, style?: object) => {
-    const keys = [
-      ['1', '2', '3'],
-      ['4', '5', '6'],
-      ['7', '8', '9'],
-      ['*', '0', '#'],
-    ];
-    const subLabels: { [key: string]: string } = {
-      '2': 'ABC', '3': 'DEF', '4': 'GHI', '5': 'JKL',
-      '6': 'MNO', '7': 'PQRS', '8': 'TUV', '9': 'WXYZ', '0': '+'
-    };
-
-    return (
-      <View style={[styles.keypadGrid, style]}>
-        {keys.flat().map((key) => (
-          <TouchableOpacity
-            key={key}
-            style={styles.keyBtn}
-            onPress={() => onPress(key)}
-            onLongPress={key === '0' ? handleLongPressZero : undefined}
-          >
-            <Text style={styles.keyText}>{key}</Text>
-            {subLabels[key] && <Text style={styles.keySub}>{subLabels[key]}</Text>}
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
+  const openAddContact = () => {
+    if (dialNumber) {
+      router.push({ pathname: '/add-contact', params: { phone: dialNumber } });
+    } else {
+      router.push('/add-contact');
+    }
   };
+
+  const renderKey = (digit: string, sub?: string, isZero?: boolean) => (
+    <TouchableOpacity
+      key={digit}
+      style={styles.key}
+      onPress={isZero ? undefined : () => dialDigit(digit)}
+      onPressIn={isZero ? startPressZero : undefined}
+      onPressOut={isZero ? endPressZero : undefined}
+      activeOpacity={0.7}
+    >
+      <Text style={styles.keyText}>{digit}</Text>
+      {sub && <Text style={styles.keySub}>{sub}</Text>}
+    </TouchableOpacity>
+  );
 
   const renderCallScreen = () => (
     <Modal visible={showCallScreen} animationType="slide">
@@ -144,13 +153,13 @@ export default function DialerScreen() {
         <SafeAreaView style={styles.callContent}>
           <View style={styles.callInfo}>
             <View style={styles.callerAvatar}>
-              <Ionicons name="person" size={50} color="#fff" />
+              <Ionicons name="person" size={60} color="#fff" />
             </View>
             <Text style={styles.callerName}>
-              {isAnonymous ? (aliasName || 'مجهول') : dialNumber}
+              {isHideId ? (aliasName || 'مجهول') : dialNumber}
             </Text>
             <Text style={styles.callerNumber}>
-              {isAnonymous ? 'رقم مخفي' : dialNumber}
+              {isHideId ? 'رقم مخفي' : dialNumber}
             </Text>
             <Text style={styles.callStatusText}>{callStatus}</Text>
             {callStatus === 'متصل' && (
@@ -163,7 +172,7 @@ export default function DialerScreen() {
               <View style={styles.dtmfHeader}>
                 <Text style={styles.dtmfTitle}>لوحة الأرقام</Text>
                 <TouchableOpacity onPress={() => setShowDTMF(false)}>
-                  <Ionicons name="close" size={24} color="#fff" />
+                  <Ionicons name="close" size={24} color="#333" />
                 </TouchableOpacity>
               </View>
               <View style={styles.dtmfDisplay}>
@@ -181,10 +190,10 @@ export default function DialerScreen() {
                 ))}
               </View>
               <TouchableOpacity
-                style={styles.dtmfBackspace}
-                onPress={() => setDtmfDigits((prev) => prev.slice(0, -1))}
+                style={styles.dtmfCloseBtn}
+                onPress={() => setShowDTMF(false)}
               >
-                <Ionicons name="backspace" size={24} color="#fff" />
+                <Text style={styles.dtmfCloseBtnText}>إغلاق</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -196,8 +205,8 @@ export default function DialerScreen() {
             >
               <Ionicons
                 name={isMuted ? 'mic-off' : 'mic'}
-                size={24}
-                color={isMuted ? '#1565C0' : '#fff'}
+                size={26}
+                color={isMuted ? '#0078D7' : '#fff'}
               />
             </TouchableOpacity>
             <TouchableOpacity
@@ -206,8 +215,8 @@ export default function DialerScreen() {
             >
               <Ionicons
                 name="keypad"
-                size={24}
-                color={showDTMF ? '#1565C0' : '#fff'}
+                size={26}
+                color={showDTMF ? '#0078D7' : '#fff'}
               />
             </TouchableOpacity>
             <TouchableOpacity
@@ -216,14 +225,14 @@ export default function DialerScreen() {
             >
               <Ionicons
                 name={isSpeaker ? 'volume-high' : 'volume-medium'}
-                size={24}
-                color={isSpeaker ? '#1565C0' : '#fff'}
+                size={26}
+                color={isSpeaker ? '#0078D7' : '#fff'}
               />
             </TouchableOpacity>
           </View>
 
           <TouchableOpacity style={styles.endCallBtn} onPress={handleEndCall}>
-            <Ionicons name="call" size={30} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+            <Text style={styles.endCallBtnText}>إنهاء المكالمة</Text>
           </TouchableOpacity>
         </SafeAreaView>
       </View>
@@ -235,15 +244,15 @@ export default function DialerScreen() {
       {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>أبو الزهراء</Text>
           <View style={styles.statusDot} />
+          <Text style={styles.headerTitle}>أبو الزهراء</Text>
         </View>
         <TouchableOpacity
           style={styles.balanceBtn}
           onPress={() => router.push('/topup')}
         >
           <Ionicons name="wallet" size={16} color="#fff" />
-          <Text style={styles.balanceText}>${(user?.balance || 0).toFixed(2)}</Text>
+          <Text style={styles.balanceText}>${balance.toFixed(2)}</Text>
         </TouchableOpacity>
       </View>
 
@@ -251,15 +260,17 @@ export default function DialerScreen() {
       <View style={styles.displayArea}>
         <Text style={styles.dialNumber}>{dialNumber || ''}</Text>
         
-        {isAnonymous && (
-          <TextInput
-            style={styles.aliasInput}
-            placeholder="اكتب الاسم البديل هنا..."
-            placeholderTextColor="#1565C0"
-            value={aliasName}
-            onChangeText={setAliasName}
-            textAlign="center"
-          />
+        {isHideId && (
+          <View style={styles.aliasContainer}>
+            <TextInput
+              style={styles.aliasInput}
+              placeholder="اسم المتصل البديل (عنوان SIP)"
+              placeholderTextColor="#0078D7"
+              value={aliasName}
+              onChangeText={setAliasName}
+              textAlign="center"
+            />
+          </View>
         )}
 
         <View style={styles.toggleRow}>
@@ -267,16 +278,16 @@ export default function DialerScreen() {
             <Switch
               value={isRecording}
               onValueChange={setIsRecording}
-              trackColor={{ false: '#ccc', true: '#1565C0' }}
+              trackColor={{ false: '#ccc', true: '#0078D7' }}
               thumbColor="#fff"
             />
             <Text style={styles.toggleLabel}>تسجيل</Text>
           </View>
           <View style={styles.toggleItem}>
             <Switch
-              value={isAnonymous}
-              onValueChange={setIsAnonymous}
-              trackColor={{ false: '#ccc', true: '#1565C0' }}
+              value={isHideId}
+              onValueChange={setIsHideId}
+              trackColor={{ false: '#ccc', true: '#0078D7' }}
               thumbColor="#fff"
             />
             <Text style={styles.toggleLabel}>إخفاء الرقم</Text>
@@ -285,27 +296,33 @@ export default function DialerScreen() {
       </View>
 
       {/* Keypad */}
-      {renderKeypad(dialDigit)}
+      <View style={styles.keypadGrid}>
+        {renderKey('1')}
+        {renderKey('2', 'ABC')}
+        {renderKey('3', 'DEF')}
+        {renderKey('4', 'GHI')}
+        {renderKey('5', 'JKL')}
+        {renderKey('6', 'MNO')}
+        {renderKey('7', 'PQRS')}
+        {renderKey('8', 'TUV')}
+        {renderKey('9', 'WXYZ')}
+        {renderKey('*')}
+        {renderKey('0', '+', true)}
+        {renderKey('#')}
+      </View>
 
       {/* Action Buttons */}
       <View style={styles.actionRow}>
-        <TouchableOpacity
-          style={styles.addContactBtn}
-          onPress={() => {
-            if (dialNumber) {
-              router.push({ pathname: '/add-contact', params: { phone: dialNumber } });
-            }
-          }}
-        >
-          <Ionicons name="person-add" size={22} color="#1565C0" />
+        <TouchableOpacity style={styles.addContactBtn} onPress={openAddContact}>
+          <Ionicons name="person-add" size={24} color="#0078D7" />
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.callBtn} onPress={handleCall}>
-          <Ionicons name="call" size={28} color="#fff" />
+          <Ionicons name="call" size={32} color="#fff" />
         </TouchableOpacity>
         
         <TouchableOpacity style={styles.deleteBtn} onPress={deleteDigit}>
-          <Ionicons name="backspace" size={24} color="#F44336" />
+          <Ionicons name="backspace" size={26} color="#d32f2f" />
         </TouchableOpacity>
       </View>
 
@@ -317,69 +334,79 @@ export default function DialerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f0f2f5',
   },
   header: {
-    backgroundColor: '#1565C0',
+    backgroundColor: '#0078D7',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 15,
+    paddingHorizontal: 20,
   },
   headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 10,
+  },
+  statusDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#00E676',
   },
   headerTitle: {
     color: '#fff',
     fontSize: 18,
     fontWeight: 'bold',
   },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#4CAF50',
-    marginLeft: 8,
-  },
   balanceBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: 'rgba(255,255,255,0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
     borderRadius: 20,
+    gap: 6,
   },
   balanceText: {
     color: '#fff',
-    fontSize: 14,
-    marginLeft: 5,
+    fontSize: 15,
+    fontWeight: '600',
   },
   displayArea: {
     backgroundColor: '#fff',
-    padding: 20,
+    padding: 30,
+    paddingBottom: 20,
     alignItems: 'center',
+    borderBottomLeftRadius: 25,
+    borderBottomRightRadius: 25,
   },
   dialNumber: {
-    fontSize: 32,
-    color: '#333',
-    minHeight: 45,
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#0078D7',
+    minHeight: 50,
     letterSpacing: 2,
   },
-  aliasInput: {
-    width: '80%',
-    backgroundColor: '#e3f2fd',
+  aliasContainer: {
+    width: '100%',
+    marginTop: 15,
+    backgroundColor: '#f0f8ff',
     borderRadius: 20,
-    padding: 10,
-    marginTop: 10,
-    color: '#1565C0',
+    borderWidth: 1,
+    borderColor: '#e3f2fd',
+  },
+  aliasInput: {
+    padding: 12,
     fontSize: 14,
+    color: '#0078D7',
   },
   toggleRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: 30,
-    marginTop: 15,
+    marginTop: 20,
   },
   toggleItem: {
     flexDirection: 'row',
@@ -387,101 +414,93 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   toggleLabel: {
-    fontSize: 13,
-    color: '#666',
+    fontSize: 14,
+    color: '#555',
   },
   keypadGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    padding: 10,
-    gap: 15,
+    padding: 20,
+    gap: 20,
   },
-  keyBtn: {
+  key: {
     width: 70,
     height: 70,
     borderRadius: 35,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(0,120,215,0.05)',
   },
   keyText: {
     fontSize: 28,
-    color: '#333',
+    fontWeight: '600',
+    color: '#0078D7',
   },
   keySub: {
     fontSize: 10,
-    color: '#888',
-    marginTop: -3,
+    color: '#0078D7',
+    opacity: 0.6,
+    marginTop: -4,
   },
   actionRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
     gap: 25,
-    marginTop: 10,
     paddingBottom: 20,
   },
   addContactBtn: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 65,
+    height: 65,
+    borderRadius: 32.5,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#eee',
   },
   callBtn: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#4CAF50',
+    width: 75,
+    height: 75,
+    borderRadius: 37.5,
+    backgroundColor: '#0078D7',
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#4CAF50',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 5,
   },
   deleteBtn: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 65,
+    height: 65,
+    borderRadius: 32.5,
     backgroundColor: '#fff',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#eee',
   },
   // Call Screen Styles
   callScreen: {
     flex: 1,
-    backgroundColor: '#0d47a1',
+    backgroundColor: '#004e92',
   },
   callContent: {
     flex: 1,
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: 60,
+    paddingHorizontal: 20,
   },
   callInfo: {
     alignItems: 'center',
   },
   callerAvatar: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.2)',
+    marginBottom: 25,
   },
   callerName: {
     fontSize: 28,
@@ -489,8 +508,8 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   callerNumber: {
-    fontSize: 16,
-    color: 'rgba(255,255,255,0.7)',
+    fontSize: 18,
+    color: 'rgba(255,255,255,0.8)',
     marginTop: 5,
   },
   callStatusText: {
@@ -499,67 +518,72 @@ const styles = StyleSheet.create({
     marginTop: 15,
   },
   callTimerText: {
-    fontSize: 36,
+    fontSize: 48,
     color: '#fff',
     fontWeight: '300',
-    marginTop: 10,
+    marginTop: 20,
+    fontFamily: 'monospace',
   },
   callControls: {
     flexDirection: 'row',
     gap: 30,
   },
   ctrlBtn: {
-    width: 55,
-    height: 55,
-    borderRadius: 27.5,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
     backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
   },
   ctrlBtnActive: {
     backgroundColor: '#fff',
   },
   endCallBtn: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#d32f2f',
-    justifyContent: 'center',
+    width: 200,
+    paddingVertical: 16,
+    backgroundColor: '#A80000',
+    borderRadius: 30,
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 30,
+  },
+  endCallBtnText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   // DTMF Styles
   dtmfContainer: {
     position: 'absolute',
-    bottom: 150,
-    left: 20,
-    right: 20,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    borderRadius: 20,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    borderTopLeftRadius: 25,
+    borderTopRightRadius: 25,
     padding: 20,
   },
   dtmfHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 15,
   },
   dtmfTitle: {
-    color: '#fff',
     fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
   },
   dtmfDisplay: {
-    backgroundColor: 'rgba(255,255,255,0.1)',
+    backgroundColor: '#f0f0f0',
     borderRadius: 10,
     padding: 15,
     marginBottom: 15,
     minHeight: 50,
   },
   dtmfDigits: {
-    color: '#fff',
-    fontSize: 24,
+    fontSize: 22,
+    color: '#333',
     textAlign: 'center',
     letterSpacing: 3,
   },
@@ -567,24 +591,31 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 10,
+    gap: 15,
   },
   dtmfKey: {
-    width: 55,
-    height: 55,
-    borderRadius: 27.5,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#E1F5FE',
     justifyContent: 'center',
     alignItems: 'center',
   },
   dtmfKeyText: {
-    color: '#fff',
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#0078D7',
   },
-  dtmfBackspace: {
-    alignSelf: 'center',
+  dtmfCloseBtn: {
+    backgroundColor: '#ddd',
+    borderRadius: 10,
+    padding: 12,
+    alignItems: 'center',
     marginTop: 15,
-    padding: 10,
+  },
+  dtmfCloseBtnText: {
+    color: '#333',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });

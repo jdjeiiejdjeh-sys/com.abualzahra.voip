@@ -5,13 +5,23 @@ import {
   StyleSheet,
   SafeAreaView,
   ScrollView,
+  TouchableOpacity,
+  Alert,
 } from 'react-native';
 import { Stack } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { useStore } from '../store/useStore';
 
 export default function ProfileScreen() {
-  const { user } = useStore();
+  const { user, balance } = useStore();
+
+  const copyUid = async () => {
+    if (user?.uid) {
+      await Clipboard.setStringAsync(user.uid);
+      Alert.alert('تم النسخ', 'تم نسخ رقم UID إلى الحافظة');
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -19,7 +29,7 @@ export default function ProfileScreen() {
         options={{
           headerShown: true,
           title: 'حسابي',
-          headerStyle: { backgroundColor: '#1565C0' },
+          headerStyle: { backgroundColor: '#0078D7' },
           headerTintColor: '#fff',
           headerBackTitle: 'رجوع',
         }}
@@ -28,7 +38,7 @@ export default function ProfileScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.avatarContainer}>
           <View style={styles.avatar}>
-            <Ionicons name="person" size={50} color="#1565C0" />
+            <Ionicons name="shield-checkmark" size={50} color="#0078D7" />
           </View>
           <Text style={styles.userName}>أبو الزهراء VIP</Text>
           <Text style={styles.userEmail}>{user?.email}</Text>
@@ -36,33 +46,48 @@ export default function ProfileScreen() {
 
         <View style={styles.card}>
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>رقمك الافتراضي:</Text>
-            <Text style={styles.infoValue}>{user?.virtual_number || 'غير محدد'}</Text>
+            <Text style={styles.infoLabel}>رقم الحساب (UID)</Text>
+            <TouchableOpacity onPress={copyUid} style={styles.copyBtn}>
+              <Ionicons name="copy-outline" size={18} color="#0078D7" />
+            </TouchableOpacity>
           </View>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>الرصيد:</Text>
-            <Text style={styles.balanceValue}>${(user?.balance || 0).toFixed(2)}</Text>
-          </View>
-          
-          <View style={styles.divider} />
-          
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>تاريخ التسجيل:</Text>
-            <Text style={styles.infoValue}>
-              {user?.created_at
-                ? new Date(user.created_at).toLocaleDateString('ar-EG')
-                : '-'}
+          <TouchableOpacity onPress={copyUid} style={styles.uidBox}>
+            <Text style={styles.uidText} selectable>
+              {user?.uid || '...'}
             </Text>
+          </TouchableOpacity>
+          
+          <View style={styles.divider} />
+          
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>الرصيد الحالي</Text>
+            <Text style={styles.balanceValue}>${balance.toFixed(2)}</Text>
           </View>
           
           <View style={styles.divider} />
           
           <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>الإصدار:</Text>
-            <Text style={styles.infoValue}>3.9.60</Text>
+            <Text style={styles.infoLabel}>البريد الإلكتروني</Text>
+            <Text style={styles.infoValue}>{user?.email}</Text>
+          </View>
+          
+          <View style={styles.divider} />
+          
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>نسخة التطبيق</Text>
+            <Text style={styles.versionValue}>3.9.60</Text>
+          </View>
+        </View>
+
+        <View style={styles.helpCard}>
+          <View style={styles.helpIcon}>
+            <Ionicons name="help-circle" size={24} color="#FF9800" />
+          </View>
+          <View style={styles.helpContent}>
+            <Text style={styles.helpTitle}>كيفية تحويل الرصيد</Text>
+            <Text style={styles.helpText}>
+              شارك رقم UID الخاص بك مع الشخص الذي يريد تحويل الرصيد إليك
+            </Text>
           </View>
         </View>
       </ScrollView>
@@ -73,26 +98,26 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f0f2f5',
   },
   content: {
     padding: 20,
   },
   avatarContainer: {
     alignItems: 'center',
-    marginBottom: 30,
+    marginBottom: 25,
   },
   avatar: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#e3f2fd',
+    backgroundColor: '#E1F5FE',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
   },
   userName: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#333',
   },
@@ -105,17 +130,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    marginBottom: 15,
   },
   infoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 5,
   },
   infoLabel: {
     fontSize: 14,
@@ -124,16 +144,61 @@ const styles = StyleSheet.create({
   infoValue: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#1565C0',
+    color: '#333',
+  },
+  copyBtn: {
+    padding: 5,
+  },
+  uidBox: {
+    backgroundColor: '#f5f5f5',
+    padding: 12,
+    borderRadius: 8,
+    marginTop: 10,
+  },
+  uidText: {
+    fontFamily: 'monospace',
+    fontSize: 12,
+    color: '#333',
+    textAlign: 'center',
   },
   balanceValue: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#4CAF50',
+  },
+  versionValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0078D7',
   },
   divider: {
     height: 1,
     backgroundColor: '#eee',
-    marginVertical: 12,
+    marginVertical: 15,
+  },
+  helpCard: {
+    backgroundColor: '#FFF3E0',
+    borderRadius: 12,
+    padding: 15,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  helpIcon: {
+    marginTop: 2,
+  },
+  helpContent: {
+    flex: 1,
+  },
+  helpTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 5,
+  },
+  helpText: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 20,
   },
 });

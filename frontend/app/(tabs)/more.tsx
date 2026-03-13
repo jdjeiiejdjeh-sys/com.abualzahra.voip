@@ -15,55 +15,49 @@ import { useStore } from '../../store/useStore';
 
 export default function MoreScreen() {
   const router = useRouter();
-  const { user, logout } = useStore();
+  const { user, logout, balance } = useStore();
 
   const menuItems = [
     {
       id: 'topup',
-      title: 'شحن الرصيد',
+      title: 'إعادة الشحن',
       icon: 'card',
-      iconBg: '#e3f2fd',
-      iconColor: '#1565C0',
+      iconBg: '#FF9800',
       route: '/topup',
     },
     {
       id: 'rates',
       title: 'التعرفة',
       icon: 'search',
-      iconBg: '#e8f5e9',
-      iconColor: '#2e7d32',
+      iconBg: '#9C27B0',
       route: '/rates',
     },
     {
       id: 'reports',
       title: 'التقارير',
       icon: 'document-text',
-      iconBg: '#fff3e0',
-      iconColor: '#ef6c00',
+      iconBg: '#607D8B',
       route: '/reports',
     },
     {
       id: 'profile',
       title: 'حسابي',
-      icon: 'person-circle',
-      iconBg: '#f3e5f5',
-      iconColor: '#7b1fa2',
+      icon: 'id-card',
+      iconBg: '#4CAF50',
       route: '/profile',
     },
     {
       id: 'transfer',
       title: 'تحويل الرصيد',
       icon: 'swap-horizontal',
-      iconBg: '#ffebee',
-      iconColor: '#c62828',
+      iconBg: '#F44336',
       route: '/transfer',
     },
     {
       id: 'support',
       title: 'الدعم',
       icon: 'logo-whatsapp',
-      iconBg: '#e0f2f1',
-      iconColor: '#00695c',
+      iconBg: '#25D366',
       action: () => Linking.openURL('https://wa.me/967784702352'),
     },
   ];
@@ -105,9 +99,10 @@ export default function MoreScreen() {
                   router.push(item.route as any);
                 }
               }}
+              activeOpacity={0.7}
             >
               <View style={[styles.iconContainer, { backgroundColor: item.iconBg }]}>
-                <Ionicons name={item.icon as any} size={26} color={item.iconColor} />
+                <Ionicons name={item.icon as any} size={24} color="#fff" />
               </View>
               <Text style={styles.menuTitle}>{item.title}</Text>
             </TouchableOpacity>
@@ -115,7 +110,7 @@ export default function MoreScreen() {
         </View>
 
         <TouchableOpacity style={styles.logoutBtn} onPress={handleLogout}>
-          <Ionicons name="log-out" size={20} color="#F44336" />
+          <Ionicons name="log-out" size={20} color="#666" />
           <Text style={styles.logoutText}>تسجيل الخروج</Text>
         </TouchableOpacity>
       </ScrollView>
@@ -126,10 +121,10 @@ export default function MoreScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f0f2f5',
   },
   header: {
-    backgroundColor: '#1565C0',
+    backgroundColor: '#0078D7',
     padding: 15,
   },
   headerTitle: {
@@ -139,7 +134,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   scrollContent: {
-    padding: 15,
+    padding: 20,
   },
   grid: {
     flexDirection: 'row',
@@ -149,23 +144,19 @@ const styles = StyleSheet.create({
   menuCard: {
     width: '31%',
     backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 15,
+    borderRadius: 18,
+    padding: 25,
+    paddingHorizontal: 10,
     alignItems: 'center',
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+    marginBottom: 20,
   },
   iconContainer: {
     width: 50,
     height: 50,
-    borderRadius: 12,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   menuTitle: {
     fontSize: 12,
@@ -176,19 +167,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#eee',
     padding: 15,
     borderRadius: 25,
-    marginTop: 20,
+    marginTop: 10,
     gap: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
   },
   logoutText: {
-    color: '#F44336',
+    color: '#666',
     fontSize: 15,
     fontWeight: '600',
   },

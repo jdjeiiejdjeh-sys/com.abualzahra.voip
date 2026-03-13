@@ -15,13 +15,13 @@ import { useStore } from '../store/useStore';
 
 export default function TransferScreen() {
   const router = useRouter();
-  const { user, transferBalance } = useStore();
-  const [toNumber, setToNumber] = useState('');
+  const { user, balance, transferBalance } = useStore();
+  const [receiverUid, setReceiverUid] = useState('');
   const [amount, setAmount] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleTransfer = async () => {
-    if (!toNumber || !amount) {
+    if (!receiverUid || !amount) {
       Alert.alert('خطأ', 'يرجى إدخال جميع البيانات');
       return;
     }
@@ -32,21 +32,26 @@ export default function TransferScreen() {
       return;
     }
 
-    if (amountNum > (user?.balance || 0)) {
+    if (amountNum > balance) {
       Alert.alert('خطأ', 'رصيد غير كافٍ');
       return;
     }
 
+    if (receiverUid === user?.uid) {
+      Alert.alert('خطأ', 'لا يمكنك التحويل لنفسك');
+      return;
+    }
+
     setIsLoading(true);
-    const success = await transferBalance(toNumber, amountNum);
+    const success = await transferBalance(receiverUid, amountNum);
     setIsLoading(false);
 
     if (success) {
-      Alert.alert('تم التحويل بنجاح!', `تم تحويل $${amountNum.toFixed(2)} إلى ${toNumber}`, [
+      Alert.alert('تم التحويل بنجاح!', `تم تحويل $${amountNum.toFixed(2)} إلى ${receiverUid}`, [
         { text: 'حسناً', onPress: () => router.back() },
       ]);
     } else {
-      Alert.alert('خطأ', 'تعذر إتمام التحويل');
+      Alert.alert('خطأ', 'تعذر إتمام التحويل. تأكد من صحة UID المستلم');
     }
   };
 
@@ -55,8 +60,8 @@ export default function TransferScreen() {
       <Stack.Screen
         options={{
           headerShown: true,
-          title: 'تحويل الرصيد',
-          headerStyle: { backgroundColor: '#1565C0' },
+          title: 'تحويل رصيد',
+          headerStyle: { backgroundColor: '#0078D7' },
           headerTintColor: '#fff',
           headerBackTitle: 'رجوع',
         }}
@@ -65,23 +70,25 @@ export default function TransferScreen() {
       <View style={styles.content}>
         <View style={styles.balanceCard}>
           <Text style={styles.balanceLabel}>رصيدك الحالي</Text>
-          <Text style={styles.balanceValue}>${(user?.balance || 0).toFixed(2)}</Text>
+          <Text style={styles.balanceValue}>${balance.toFixed(2)}</Text>
         </View>
 
         <View style={styles.card}>
+          <Text style={styles.inputLabel}>رقم حساب المستلم (UID)</Text>
           <TextInput
             style={styles.input}
-            placeholder="رقم المستلم"
+            placeholder="أدخل UID المستلم"
             placeholderTextColor="#999"
-            value={toNumber}
-            onChangeText={setToNumber}
-            keyboardType="phone-pad"
+            value={receiverUid}
+            onChangeText={setReceiverUid}
             textAlign="right"
+            autoCapitalize="none"
           />
 
+          <Text style={styles.inputLabel}>المبلغ ($)</Text>
           <TextInput
             style={styles.input}
-            placeholder="المبلغ"
+            placeholder="0.00"
             placeholderTextColor="#999"
             value={amount}
             onChangeText={setAmount}
@@ -104,6 +111,13 @@ export default function TransferScreen() {
             )}
           </TouchableOpacity>
         </View>
+
+        <View style={styles.infoBox}>
+          <Ionicons name="information-circle" size={20} color="#0078D7" />
+          <Text style={styles.infoText}>
+            يمكنك الحصول على UID الخاص بك من قسم "حسابي"
+          </Text>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -112,13 +126,13 @@ export default function TransferScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f0f2f5',
   },
   content: {
     padding: 15,
   },
   balanceCard: {
-    backgroundColor: '#1565C0',
+    backgroundColor: '#9C27B0',
     borderRadius: 12,
     padding: 20,
     alignItems: 'center',
@@ -138,11 +152,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderRadius: 12,
     padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 2,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
   },
   input: {
     backgroundColor: '#f5f5f5',
@@ -150,13 +165,13 @@ const styles = StyleSheet.create({
     padding: 15,
     fontSize: 16,
     color: '#333',
-    marginBottom: 15,
+    marginBottom: 20,
   },
   transferBtn: {
     flexDirection: 'row',
-    backgroundColor: '#1565C0',
+    backgroundColor: '#9C27B0',
     borderRadius: 8,
-    padding: 15,
+    padding: 16,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
@@ -164,6 +179,21 @@ const styles = StyleSheet.create({
   transferBtnText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+  },
+  infoBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#E3F2FD',
+    padding: 15,
+    borderRadius: 10,
+    marginTop: 20,
+    gap: 10,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#0078D7',
+    lineHeight: 20,
   },
 });
