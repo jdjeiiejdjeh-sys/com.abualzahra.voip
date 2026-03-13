@@ -14,17 +14,22 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import * as Google from 'expo-auth-session/providers/google';
-import * as WebBrowser from 'expo-web-browser';
 import { useStore } from '../store/useStore';
+import {
+  GoogleSignin,
+  statusCodes,
+  isSuccessResponse,
+  isErrorWithCode,
+} from '@react-native-google-signin/google-signin';
 
-// Required for web browser auth session
-WebBrowser.maybeCompleteAuthSession();
+// Configure Google Sign-In with Web Client ID from Firebase
+const GOOGLE_WEB_CLIENT_ID = '982107544824-jbl3da73lr9h7il169onbl4ftrkmhvaj.apps.googleusercontent.com';
 
-// Google OAuth Client IDs - From Firebase project
-const GOOGLE_WEB_CLIENT_ID = '982107544824-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com';
-const GOOGLE_ANDROID_CLIENT_ID = '982107544824-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com';
-const GOOGLE_IOS_CLIENT_ID = '982107544824-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com';
+// Initialize Google Sign-In
+GoogleSignin.configure({
+  webClientId: GOOGLE_WEB_CLIENT_ID,
+  offlineAccess: true,
+});
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -34,13 +39,6 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [localLoading, setLocalLoading] = useState(false);
-
-  // Google Auth setup
-  const [request, response, promptAsync] = Google.useAuthRequest({
-    webClientId: GOOGLE_WEB_CLIENT_ID,
-    androidClientId: GOOGLE_ANDROID_CLIENT_ID,
-    iosClientId: GOOGLE_IOS_CLIENT_ID,
-  });
 
   useEffect(() => {
     const unsubscribe = initAuthListener();
@@ -53,34 +51,55 @@ export default function LoginScreen() {
     }
   }, [isAuthenticated, isLoading]);
 
-  // Handle Google Sign-In response
-  useEffect(() => {
-    if (response?.type === 'success') {
-      const { authentication } = response;
-      if (authentication?.accessToken) {
-        handleGoogleSignIn(authentication.accessToken);
-      }
-    }
-  }, [response]);
-
-  const handleGoogleSignIn = async (accessToken: string) => {
+  const handleGoogleSignIn = async () => {
     setLocalLoading(true);
     try {
-      // Get user info from Google
-      const userInfoResponse = await fetch(
-        'https://www.googleapis.com/userinfo/v2/me',
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      const userInfo = await userInfoResponse.json();
+      // Check if Play Services are available (Android only)
+      await GoogleSignin.hasPlayServices();
       
-      // Login with Google credentials
-      const success = await loginWithGoogle(userInfo.email, userInfo.id, userInfo.name);
-      if (!success) {
-        Alert.alert('خطأ', 'تعذر تسجيل الدخول عبر Google');
+      // Sign in with Google - This shows the native account picker
+      const response = await GoogleSignin.signIn();
+      
+      if (isSuccessResponse(response)) {
+        const { data } = response;
+        const userEmail = data.user.email;
+        const userId = data.user.id;
+        const userName = data.user.name || undefined;
+        
+        console.log('Google Sign-In successful:', userEmail);
+        
+        // Login with Google credentials to our store
+        const success = await loginWithGoogle(userEmail, userId, userName);
+        if (!success) {
+          Alert.alert('خطأ', 'تعذر تسجيل الدخول عبر Google');
+        }
       }
     } catch (error) {
       console.error('Google sign-in error:', error);
-      Alert.alert('خطأ', 'تعذر تسجيل الدخول عبر Google');
+      
+      if (isErrorWithCode(error)) {
+        switch (error.code) {
+          case statusCodes.IN_PROGRESS:
+            // Operation is already in progress
+            break;
+          case statusCodes.PLAY_SERVICES_NOT_AVAILABLE:
+            Alert.alert('خطأ', 'خدمات Google Play غير متوفرة');
+            break;
+          case statusCodes.SIGN_IN_CANCELLED:
+            // User cancelled the sign-in flow
+            console.log('User cancelled Google sign-in');
+            break;
+          default:
+            Alert.alert('خطأ', 'تعذر تسجيل الدخول عبر Google');
+        }
+      } else {
+        // For web platform, show a message
+        if (Platform.OS === 'web') {
+          Alert.alert('تنبيه', 'تسجيل الدخول بـ Google يعمل على الجهاز المحمول فقط. استخدم البريد الإلكتروني وكلمة المرور للدخول.');
+        } else {
+          Alert.alert('خطأ', 'تعذر تسجيل الدخول عبر Google');
+        }
+      }
     }
     setLocalLoading(false);
   };
@@ -98,16 +117,6 @@ export default function LoginScreen() {
     if (!success) {
       Alert.alert('خطأ', 'بيانات الدخول غير صحيحة');
     }
-  };
-
-  const handleGooglePress = async () => {
-    setLocalLoading(true);
-    try {
-      await promptAsync();
-    } catch (error) {
-      console.error('Google prompt error:', error);
-    }
-    setLocalLoading(false);
   };
 
   if (isLoading) {
@@ -210,8 +219,8 @@ export default function LoginScreen() {
 
         <TouchableOpacity 
           style={styles.googleBtn} 
-          onPress={handleGooglePress}
-          disabled={localLoading || !request}
+          onPress={handleGoogleSignIn}
+          disabled={localLoading}
         >
           <View style={styles.googleIconContainer}>
             <Text style={styles.googleIcon}>G</Text>

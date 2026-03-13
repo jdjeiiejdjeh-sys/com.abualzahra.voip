@@ -12,8 +12,8 @@ import {
 import {
   getDatabase,
   ref,
-  set,
-  get,
+  set as firebaseSet,
+  get as firebaseGet,
   push,
   onValue,
   off,
@@ -147,34 +147,41 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       set({ isLoading: true });
       const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const firebaseUser = userCredential.user;
       
       // Get user data from database
-      const userRef = ref(database, `users/${user.uid}`);
-      const snapshot = await get(userRef);
+      const userRef = ref(database, `users/${firebaseUser.uid}`);
+      const snapshot = await firebaseGet(userRef);
       let userData = snapshot.val();
       
       if (!userData) {
         // Create user data if not exists
-        userData = { balance: 0.63, email: user.email };
-        await set(userRef, userData);
+        userData = { balance: 0.63, email: firebaseUser.email };
+        await firebaseSet(userRef, userData);
       }
       
       set({ 
-        user: { uid: user.uid, email: user.email || '', balance: userData.balance || 0.63 },
-        firebaseUser: user,
+        user: { uid: firebaseUser.uid, email: firebaseUser.email || '', balance: userData.balance || 0.63 },
+        firebaseUser: firebaseUser,
         isAuthenticated: true,
         balance: userData.balance || 0.63,
         isLoading: false 
       });
+
+      // Load user data
+      const state = get();
+      state.loadContacts();
+      state.loadCallLogs();
+      state.loadMessages();
       
       return true;
     } catch (error: any) {
       console.error('Login error:', error);
       set({ isLoading: false });
       
-      // If user not found, try to register
-      if (error.code === 'auth/user-not-found') {
+      // If user not found or invalid credential, try to register
+      if (error.code === 'auth/user-not-found' || error.code === 'auth/invalid-credential') {
+        console.log('User not found, attempting to register...');
         return get().register(email, password);
       }
       return false;
@@ -185,23 +192,29 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       set({ isLoading: true });
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const firebaseUser = userCredential.user;
       
       // Create user data with initial balance
-      const userRef = ref(database, `users/${user.uid}`);
-      await set(userRef, { 
+      const userRef = ref(database, `users/${firebaseUser.uid}`);
+      await firebaseSet(userRef, { 
         balance: 0.63, 
-        email: user.email,
+        email: firebaseUser.email,
         createdAt: Date.now()
       });
       
       set({ 
-        user: { uid: user.uid, email: user.email || '', balance: 0.63 },
-        firebaseUser: user,
+        user: { uid: firebaseUser.uid, email: firebaseUser.email || '', balance: 0.63 },
+        firebaseUser: firebaseUser,
         isAuthenticated: true,
         balance: 0.63,
         isLoading: false 
       });
+
+      // Load user data
+      const state = get();
+      state.loadContacts();
+      state.loadCallLogs();
+      state.loadMessages();
       
       return true;
     } catch (error) {
@@ -216,10 +229,9 @@ export const useStore = create<AppState>((set, get) => ({
       set({ isLoading: true });
       
       // For Google Sign-In, we create/get user in Firebase database
-      // The googleId serves as a unique identifier
       const userId = `google_${googleId}`;
       const userRef = ref(database, `users/${userId}`);
-      const snapshot = await get(userRef);
+      const snapshot = await firebaseGet(userRef);
       let userData = snapshot.val();
       
       if (!userData) {
@@ -231,7 +243,7 @@ export const useStore = create<AppState>((set, get) => ({
           provider: 'google',
           createdAt: Date.now()
         };
-        await set(userRef, userData);
+        await firebaseSet(userRef, userData);
       }
       
       set({ 
@@ -242,9 +254,10 @@ export const useStore = create<AppState>((set, get) => ({
       });
       
       // Load user data
-      get().loadContacts();
-      get().loadCallLogs();
-      get().loadMessages();
+      const state = get();
+      state.loadContacts();
+      state.loadCallLogs();
+      state.loadMessages();
       
       return true;
     } catch (error) {
@@ -274,35 +287,41 @@ export const useStore = create<AppState>((set, get) => ({
   initAuthListener: () => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
-        // Get user data
-        const userRef = ref(database, `users/${firebaseUser.uid}`);
-        const snapshot = await get(userRef);
-        let userData = snapshot.val();
-        
-        if (!userData) {
-          userData = { balance: 0.63, email: firebaseUser.email };
-          await set(userRef, userData);
+        try {
+          // Get user data
+          const userRef = ref(database, `users/${firebaseUser.uid}`);
+          const snapshot = await firebaseGet(userRef);
+          let userData = snapshot.val();
+          
+          if (!userData) {
+            userData = { balance: 0.63, email: firebaseUser.email };
+            await firebaseSet(userRef, userData);
+          }
+          
+          set({ 
+            user: { uid: firebaseUser.uid, email: firebaseUser.email || '', balance: userData.balance || 0 },
+            firebaseUser,
+            isAuthenticated: true,
+            balance: userData.balance || 0,
+            isLoading: false 
+          });
+          
+          // Load user data
+          const state = get();
+          state.loadContacts();
+          state.loadCallLogs();
+          state.loadMessages();
+          
+          // Listen for balance changes
+          const balanceRef = ref(database, `users/${firebaseUser.uid}/balance`);
+          onValue(balanceRef, (balanceSnapshot) => {
+            const balance = balanceSnapshot.val() || 0;
+            set({ balance });
+          });
+        } catch (error) {
+          console.error('Auth listener error:', error);
+          set({ isLoading: false });
         }
-        
-        set({ 
-          user: { uid: firebaseUser.uid, email: firebaseUser.email || '', balance: userData.balance || 0 },
-          firebaseUser,
-          isAuthenticated: true,
-          balance: userData.balance || 0,
-          isLoading: false 
-        });
-        
-        // Load user data
-        get().loadContacts();
-        get().loadCallLogs();
-        get().loadMessages();
-        
-        // Listen for balance changes
-        const balanceRef = ref(database, `users/${firebaseUser.uid}/balance`);
-        onValue(balanceRef, (snapshot) => {
-          const balance = snapshot.val() || 0;
-          set({ balance });
-        });
       } else {
         set({ 
           user: null, 
@@ -318,22 +337,22 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Balance
   updateBalance: async (amount: number) => {
-    const { user, balance } = get();
-    if (!user) return;
+    const state = get();
+    if (!state.user) return;
     
-    const newBalance = balance + amount;
-    const balanceRef = ref(database, `users/${user.uid}/balance`);
-    await set(balanceRef, newBalance);
+    const newBalance = state.balance + amount;
+    const balanceRef = ref(database, `users/${state.user.uid}/balance`);
+    await firebaseSet(balanceRef, newBalance);
     set({ balance: newBalance });
   },
 
   transferBalance: async (receiverUid: string, amount: number) => {
-    const { user, balance } = get();
-    if (!user || amount > balance) return false;
+    const state = get();
+    if (!state.user || amount > state.balance) return false;
     
     try {
       // Deduct from sender
-      const senderRef = ref(database, `users/${user.uid}/balance`);
+      const senderRef = ref(database, `users/${state.user.uid}/balance`);
       await runTransaction(senderRef, (currentBalance) => {
         if ((currentBalance || 0) < amount) return;
         return (currentBalance || 0) - amount;
@@ -346,7 +365,7 @@ export const useStore = create<AppState>((set, get) => ({
       });
       
       // Log the transfer
-      await get().logCall(`تحويل إلى ${receiverUid}`, 'transfer', amount);
+      await state.logCall(`تحويل إلى ${receiverUid}`, 'transfer', amount);
       
       return true;
     } catch (error) {
@@ -357,10 +376,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Contacts
   loadContacts: () => {
-    const { user } = get();
-    if (!user) return;
+    const state = get();
+    if (!state.user) return;
     
-    const contactsRef = ref(database, `users/${user.uid}/contacts`);
+    const contactsRef = ref(database, `users/${state.user.uid}/contacts`);
     onValue(contactsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -376,11 +395,11 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   addContact: async (name: string, number: string) => {
-    const { user } = get();
-    if (!user) return false;
+    const state = get();
+    if (!state.user) return false;
     
     try {
-      const contactsRef = ref(database, `users/${user.uid}/contacts`);
+      const contactsRef = ref(database, `users/${state.user.uid}/contacts`);
       await push(contactsRef, { name, number });
       return true;
     } catch (error) {
@@ -390,12 +409,12 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   deleteContact: async (contactId: string) => {
-    const { user } = get();
-    if (!user) return false;
+    const state = get();
+    if (!state.user) return false;
     
     try {
-      const contactRef = ref(database, `users/${user.uid}/contacts/${contactId}`);
-      await set(contactRef, null);
+      const contactRef = ref(database, `users/${state.user.uid}/contacts/${contactId}`);
+      await firebaseSet(contactRef, null);
       return true;
     } catch (error) {
       console.error('Delete contact error:', error);
@@ -405,38 +424,11 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Calls
   initiateCall: async (toNumber: string, displayName?: string, shouldRecord?: boolean) => {
-    const { user, balance } = get();
-    if (!user || balance < 0.05) return null;
+    const state = get();
+    if (!state.user || state.balance < 0.05) return null;
     
     try {
-      // Call backend to initiate Twilio call
-      const response = await fetch(`${API_URL}/api/calls/initiate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          to_number: toNumber,
-          record: shouldRecord || false,
-          anonymous: !!displayName,
-          alias_name: displayName,
-          user_id: user.uid
-        })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        set({
-          activeCall: {
-            callSid: data.call_sid,
-            toNumber,
-            status: 'connecting',
-            startTime: new Date(),
-            displayName: displayName || toNumber
-          }
-        });
-        return data.call_sid;
-      }
-      
-      // If backend fails, still show call UI for demo
+      // Show call UI immediately
       set({
         activeCall: {
           toNumber,
@@ -445,25 +437,45 @@ export const useStore = create<AppState>((set, get) => ({
           displayName: displayName || toNumber
         }
       });
+
+      // Try to call backend
+      try {
+        const response = await fetch(`${API_URL}/api/calls/initiate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            to_number: toNumber,
+            record: shouldRecord || false,
+            anonymous: !!displayName,
+            alias_name: displayName,
+            user_id: state.user.uid
+          })
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          set({
+            activeCall: {
+              callSid: data.call_sid,
+              toNumber,
+              status: 'connecting',
+              startTime: new Date(),
+              displayName: displayName || toNumber
+            }
+          });
+          return data.call_sid;
+        }
+      } catch (e) {
+        console.log('Backend call failed, using demo mode');
+      }
       
       // Deduct balance
-      await get().updateBalance(-0.05);
-      await get().logCall(toNumber, 'outgoing', 0.05);
+      await state.updateBalance(-0.05);
+      await state.logCall(toNumber, 'outgoing', 0.05);
       
       return 'demo-call';
     } catch (error) {
       console.error('Initiate call error:', error);
-      
-      // Show call UI even if backend fails
-      set({
-        activeCall: {
-          toNumber,
-          status: 'connecting',
-          startTime: new Date(),
-          displayName: displayName || toNumber
-        }
-      });
-      
       return 'demo-call';
     }
   },
@@ -473,10 +485,10 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   logCall: async (to: string, type: 'outgoing' | 'incoming' | 'transfer', cost: number, duration?: string) => {
-    const { user } = get();
-    if (!user) return;
+    const state = get();
+    if (!state.user) return;
     
-    const logsRef = ref(database, `users/${user.uid}/logs`);
+    const logsRef = ref(database, `users/${state.user.uid}/logs`);
     await push(logsRef, {
       to,
       type,
@@ -487,10 +499,10 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   loadCallLogs: () => {
-    const { user } = get();
-    if (!user) return;
+    const state = get();
+    if (!state.user) return;
     
-    const logsRef = query(ref(database, `users/${user.uid}/logs`), orderByKey(), limitToLast(50));
+    const logsRef = query(ref(database, `users/${state.user.uid}/logs`), orderByKey(), limitToLast(50));
     onValue(logsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -509,10 +521,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Messages
   loadMessages: () => {
-    const { user } = get();
-    if (!user) return;
+    const state = get();
+    if (!state.user) return;
     
-    const msgsRef = query(ref(database, `users/${user.uid}/messages`), orderByKey(), limitToLast(100));
+    const msgsRef = query(ref(database, `users/${state.user.uid}/messages`), orderByKey(), limitToLast(100));
     onValue(msgsRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -528,11 +540,11 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   sendMessage: async (toNumber: string, text: string) => {
-    const { user, balance } = get();
-    if (!user || balance < 0.02) return false;
+    const state = get();
+    if (!state.user || state.balance < 0.02) return false;
     
     try {
-      const msgsRef = ref(database, `users/${user.uid}/messages`);
+      const msgsRef = ref(database, `users/${state.user.uid}/messages`);
       await push(msgsRef, {
         number: toNumber,
         text,
@@ -548,7 +560,7 @@ export const useStore = create<AppState>((set, get) => ({
           body: JSON.stringify({
             to_number: toNumber,
             body: text,
-            user_id: user.uid
+            user_id: state.user.uid
           })
         });
       } catch (e) {
@@ -563,8 +575,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   getConversation: (number: string) => {
-    const { messages } = get();
-    return messages.filter(m => m.number === number);
+    const state = get();
+    return state.messages.filter(m => m.number === number);
   },
 
   // Rates
